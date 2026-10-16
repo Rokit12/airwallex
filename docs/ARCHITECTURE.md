@@ -78,7 +78,7 @@ sequenceDiagram
 |---|---|
 | `client.ts` | Logs in with `x-client-id` / `x-api-key`, caches the 30-minute token and refreshes early. Spaces calls to stay under the sandbox rate limit and backs off on 429. Retries a POST only when it carries a `request_id`. Refuses to run against any non-sandbox host. |
 | `rails.ts` | For card issuing and card acceptance: tries the live API, and switches that rail to `emulator.ts` only when Airwallex refuses the feature for the account. |
-| `platform-client.ts` | Same idea for kits 5–8: switches to `platform-emulator.ts` when Airwallex refuses to open connected accounts. FX rates and quotes always stay live. |
+| `platform-client.ts` | Same idea for kits 5–8: switches to `platform-emulator.ts` when Airwallex refuses to open connected accounts. FX rates and quotes always stay live, and so does card issuing: cards are issued on the platform's own account and each card's per-transaction limit is set to the customer's wallet before every authorization, so Airwallex makes the approve/decline call. |
 | `emulator.ts` | Card issuing and payment acceptance, following documented rules: inclusive per-transaction limits, cumulative monthly limits, decline reasons, documented decline test cards, dispute stage transitions. |
 | `platform-emulator.ts` | Per-account wallets, `x-on-behalf-of`, connected-account transfers and charges that settle after creation, the three insufficient-funds codes, SWIFT fees, on-behalf transfers that stay PROCESSING until simulated. |
 | `sandbox.ts` | Every sandbox-only simulation (deposits, card authorizations, transfer transitions, disputes) behind one interface. Treats a 5xx on a transition as unconfirmed and re-reads. |

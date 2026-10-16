@@ -141,7 +141,8 @@ Status on our US sandbox account:
 | 1, 3 | Everything: FX, SWIFT and ACH payouts, bank returns | – |
 | 2 | Everything: wallet, forecast, cardholder, **virtual card issuing, card controls and real authorizations/declines** | – |
 | 4 | Payment intents are created live; evidence uploads | Confirming a card by API (needs native API / PCI access) and the disputes that follow |
-| 5–8 | FX rates and quotes | Connected accounts and platform payments |
+| 5 | **Virtual cards, card controls and authorizations** (each card's limit mirrors the customer's wallet, so Airwallex approves or declines); FX | Connected accounts and platform payments |
+| 6–8 | FX rates and quotes | Connected accounts and platform payments |
 | 9 | Headless browser shopping on the test storefront; payment intents | Card confirmation by API; Airi CLI for real merchants |
 | 10 | Merchant MCP server, hosted payment page, payment intents | Card confirmation by API; merchant-side Agentic Commerce |
 

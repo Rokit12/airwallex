@@ -24,6 +24,7 @@ const awx = new PlatformClient();
 
 async function spend(acct: string, cardId: string, amount: number, mcc: string, merchant: string) {
   const tx = await awx.post("/simulation/issuing/create", { card_id: cardId, transaction_amount: amount, transaction_currency: "USD", merchant_category_code: mcc, merchant_info: merchant, single_phase: true }, { onBehalfOf: acct });
+  if (tx.airwallex_failure_reason) say.step(`Airwallex declined the authorization (${tx.airwallex_failure_reason}): the card limit mirrors the customer's wallet`);
   return tx.failure_reason ?? (tx.status === "FAILED" ? "FAILED" : "APPROVED");
 }
 

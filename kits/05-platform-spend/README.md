@@ -30,3 +30,7 @@ npm run console       # or pick kit 05 in the web console
 - `policy.test.ts`: tests that pin them
 - `fixtures.ts`: synthetic data for the demo
 - `run.ts`: the demo flow against the sandbox
+
+## Live cards while connected accounts are unavailable
+
+If Airwallex refuses to open connected accounts, the customers' wallets run on the platform emulator but **cards stay live**. Each customer gets a real virtual card on the platform's Airwallex account. Before every authorization, the platform sets that card's per-transaction limit to the lower of the platform control (USD 3,500) and the customer's wallet balance. Airwallex then approves or declines the authorization itself. A decline caused by the wallet limit is reported as `INSUFFICIENT_FUNDS`, and Airwallex's own reason (`LIMIT_EXCEEDED`) is kept alongside it.

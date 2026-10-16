@@ -64,7 +64,7 @@ export class PlatformEmulator {
   bal(acct: string, ccy: string) {
     return this.wallet(acct).get(ccy) ?? 0;
   }
-  private move(acct: string, ccy: string, delta: number) {
+  move(acct: string, ccy: string, delta: number) {
     this.wallet(acct).set(ccy, r2(this.bal(acct, ccy) + delta));
   }
   private balances(acct: string) {
