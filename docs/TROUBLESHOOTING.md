@@ -20,6 +20,7 @@ These are switches on Airwallex's side. The kits run on emulators in the meantim
 |---|---|---|
 | `Invalid issuance details` or `not allowed to set "DEBIT" card type` | Kits 2, 5 (cards) | Card issuing for the account |
 | `configuration_error: Invalid request against merchant configuration` | Kits 4, 9, 10 (payments) | Card acceptance / payment intents |
+| `This account is not enabled for native API access` (on `/confirm`) | Kits 4, 9, 10 (card confirmation) | Native API access for payments, or use Airwallex's hosted page / Drop-in element so card details never touch your server |
 | `This account cannot onboard business accounts` | Kits 5–8 | Connected accounts **and** platform payments |
 
 To check whether a feature is live, run a kit with `RAILS=live`. It fails fast instead of falling back to the emulator.

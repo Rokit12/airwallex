@@ -31,11 +31,12 @@ Click **Kit 01**, then **Run agent**.
 - **Deposit:** "Six thousand lands. One decision changes, and nothing else is recalculated."
 - **Approval card:** point at the quote id and rate. Press **Approve**. "Real FX, a SWIFT payout and an ACH payout, all paid, and the reserve holds."
 
-### 2:45–4:05 · Four more agents, one moment each
+### 2:45–4:05 · Five more agents, one moment each
 - **Kit 05 (bridge table):** "Bridge capital covers one late customer. The one with a bank pre-notice gets it; the other's card payment declines exactly as predicted."
 - **Kit 06 (pooled-check warning):** "Summing every employer's balance says 'enough'. Per employer, Beacon is short, so it asks for a platform advance instead of using another employer's money."
 - **Kit 09 (rejected list, then re-ask):** "It rejects a better-rated 3-person tent because the shopper asked for 2-person. When the price rises after approval, it asks again, and a timed-out payment is checked before any retry."
 - **Kit 10 (decline, same checkout):** "The first card is declined. The agent sees no order and no charge, and sends the shopper back to the same checkout. One order, one charge."
+- **Kit 02 (card declines table):** "This one is fully live on Airwallex: a virtual card locked to one vendor, one currency and the approved amount. Coffee, euros and an upsell are all declined by Airwallex itself."
 - Point at the **Platform rail emulated** / **Card rail emulated** chip: "Features Airwallex hasn't enabled on our account run on emulators built from the documented behaviour, and switch to live automatically."
 
 ### 4:05–4:30 · Why it's safe

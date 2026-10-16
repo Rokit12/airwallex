@@ -208,6 +208,13 @@ export class CardEmulator {
     return this.intents.get(id) ?? fail(404, "resource_not_found", `PaymentIntent ${id} not found`, path);
   }
 
+  /** Takes over an intent that was created live but could not be confirmed live. */
+  adoptIntent(live: Obj) {
+    const pi: Obj = { ...live, _emulated: true, created_live: true };
+    this.intents.set(pi.id, pi);
+    return pi;
+  }
+
   private createIntent(b: Obj) {
     const pi = { _emulated: true, id: `int_emu_${randomUUID().replace(/-/g, "").slice(0, 18)}`, request_id: b.request_id, amount: Number(b.amount), currency: b.currency, merchant_order_id: b.merchant_order_id, descriptor: b.descriptor, status: "REQUIRES_PAYMENT_METHOD", created_at: now() };
     this.intents.set(pi.id, pi);

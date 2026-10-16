@@ -3,6 +3,8 @@
  * the emulator only when Airwallex refuses that feature for this account:
  *
  *   payments: POST /pa/payment_intents/create → configuration_error
+ *             POST /pa/payment_intents/:id/confirm → "not enabled for native API access"
+ *             (raw card details need PCI-level access; the live intent is handed to the emulator)
  *   issuing:  POST /issuing/cards/create      → "Invalid issuance details" / "not allowed to set ... card type"
  *
  * Everything else (balances, deposits, FX, transfers, file uploads, cardholders)
@@ -16,18 +18,12 @@ import { say } from "./narrate.ts";
 type Rail = "issuing" | "payments";
 type Mode = "live" | "emulated";
 
-const REFUSED: Record<Rail, { path: RegExp; match: (e: AwxError) => boolean; label: string }> = {
-  payments: {
-    path: /^\/pa\/payment_intents\/create$/,
-    match: (e) => e.code === "configuration_error",
-    label: "card acceptance",
-  },
-  issuing: {
-    path: /^\/issuing\/cards\/create$/,
-    match: (e) => /issuance details|not allowed to set/i.test(e.message),
-    label: "card issuing",
-  },
-};
+type Rule = { rail: Rail; path: RegExp; match: (e: AwxError) => boolean; label: string };
+const REFUSED: Rule[] = [
+  { rail: "payments", path: /^\/pa\/payment_intents\/create$/, match: (e) => e.code === "configuration_error", label: "card acceptance" },
+  { rail: "payments", path: /^\/pa\/payment_intents\/[\w-]+\/confirm$/, match: (e) => /native API access/i.test(e.message), label: "card confirmation by API" },
+  { rail: "issuing", path: /^\/issuing\/cards\/create$/, match: (e) => /issuance details|not allowed to set/i.test(e.message), label: "card issuing" },
+];
 
 export class RailsClient extends AirwallexClient {
   private readonly emu = new CardEmulator();
@@ -52,11 +48,13 @@ export class RailsClient extends AirwallexClient {
     try {
       return await super.call<T>(method, path, opts);
     } catch (err) {
-      const rule = rail ? REFUSED[rail] : undefined;
-      if (rail && rule && err instanceof AwxError && rule.path.test(path) && rule.match(err) && process.env.RAILS !== "live") {
+      const rule = err instanceof AwxError ? REFUSED.find((r) => r.rail === rail && r.path.test(path) && r.match(err as AwxError)) : undefined;
+      if (rail && rule && process.env.RAILS !== "live") {
+        const confirm = path.match(/^\/pa\/payment_intents\/([\w-]+)\/confirm$/);
+        if (confirm) this.emu.adoptIntent(await super.call("GET", `/pa/payment_intents/${confirm[1]}`));
         this.mode[rail] = "emulated";
-        say.warn(`Airwallex has not enabled ${rule.label} on this sandbox account (${err.code}). Switching ${rule.label} to the card emulator; results are labelled EMULATED.`);
-        audit({ kind: "rail_switch", rail, to: "emulated", cause: err.message });
+        say.warn(`Airwallex has not enabled ${rule.label} on this sandbox account (${(err as AwxError).code}). Switching ${rule.label} to the card emulator; results are labelled EMULATED.`);
+        audit({ kind: "rail_switch", rail, to: "emulated", cause: (err as AwxError).message });
         return this.emulate<T>(method, path, opts);
       }
       throw err;

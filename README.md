@@ -132,16 +132,18 @@ All settings live in `.env` (see [`.env.example`](.env.example)).
 
 ## Live and emulated
 
-Every kit calls the real Airwallex sandbox API first. Some features have to be switched on by Airwallex for an account: card issuing, card acceptance, and connected accounts with platform payments. When Airwallex refuses one of these, that part of the run switches to an emulator built from Airwallex's documented sandbox behaviour, and the run is labelled **Card rail emulated** or **Platform rail emulated**. The same code goes live as soon as the feature is enabled.
+Every kit calls the real Airwallex sandbox API first. Some features have to be switched on by Airwallex for an account. When Airwallex refuses one, that part of the run switches to an emulator built from Airwallex's documented sandbox behaviour, and the run is labelled **Card rail emulated** or **Platform rail emulated**. The same code goes live as soon as the feature is enabled.
 
-| Kits | Live on any sandbox account | Live once Airwallex enables |
+Status on our US sandbox account:
+
+| Kits | Live | Emulated until Airwallex enables it |
 |---|---|---|
-| 1, 3 | Everything | – |
-| 2 | Wallet, deposits, forecast, cardholder | Card issuing |
-| 4 | Evidence uploads | Card acceptance (payments and disputes) |
+| 1, 3 | Everything: FX, SWIFT and ACH payouts, bank returns | – |
+| 2 | Everything: wallet, forecast, cardholder, **virtual card issuing, card controls and real authorizations/declines** | – |
+| 4 | Payment intents are created live; evidence uploads | Confirming a card by API (needs native API / PCI access) and the disputes that follow |
 | 5–8 | FX rates and quotes | Connected accounts and platform payments |
-| 9 | Headless browser shopping on the test storefront | Card acceptance; Airi CLI for real merchants |
-| 10 | Merchant MCP server and hosted payment page | Card acceptance; merchant-side Agentic Commerce |
+| 9 | Headless browser shopping on the test storefront; payment intents | Card confirmation by API; Airi CLI for real merchants |
+| 10 | Merchant MCP server, hosted payment page, payment intents | Card confirmation by API; merchant-side Agentic Commerce |
 
 `RAILS=live npm run kit5` disables the fallback, which is a quick way to check whether a feature is enabled yet.
 
@@ -191,4 +193,3 @@ runs/                audit logs and run outputs (git-ignored)
 ## License
 
 [MIT](LICENSE)
-# airwallex
