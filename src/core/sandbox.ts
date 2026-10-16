@@ -85,20 +85,23 @@ export class Sandbox {
 
   /**
    * The sandbox sometimes answers 5xx yet applies the transition. Treat that as
-   * unconfirmed: re-read the transfer, and retry once only if it did not move.
+   * unconfirmed: re-read the transfer, and retry (with growing waits, up to
+   * four attempts) only if it did not move. A transfer created a moment ago can
+   * briefly refuse transitions with 500 while the sandbox is still booking it.
    */
   async transferTransition(transferId: string, nextStatus: "SENT" | "PAID" | "FAILED" | "CANCELLED", failureType?: string, onBehalfOf?: string): Promise<any> {
     const body = { next_status: nextStatus, ...(failureType ? { failure_type: failureType } : {}) };
     const reached = (s: string) => s === nextStatus || (nextStatus === "FAILED" && s === "CANCELLED");
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    const waits = [1500, 3000, 5000, 8000];
+    for (let attempt = 1; attempt <= waits.length; attempt++) {
       try {
         return await this.awx.post(`/simulation/transfers/${transferId}/transition`, body, { onBehalfOf });
       } catch (err) {
         if (!(err instanceof AwxError) || err.status < 500) throw err;
-        await new Promise((r) => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, waits[attempt - 1]));
         const now = await this.awx.get(`/transfers/${transferId}`, { onBehalfOf });
         if (reached(now.status)) return { ...now, _confirmedByRead: true };
-        if (attempt === 2) throw err;
+        if (attempt === waits.length) throw err;
       }
     }
   }

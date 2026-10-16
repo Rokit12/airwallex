@@ -14,7 +14,7 @@ A shopper wants a 2-person backpacking tent under USD 260 all-in, arriving withi
 
 ## Live or emulated
 
-Real headless Chromium against the local test storefront. Merchant payments go through Airwallex payment intents (card emulator until card acceptance is enabled). Real-merchant checkout needs Airi CLI access: set `AIRI_MANDATE_CMD`, `AIRI_CREDENTIALS_CMD` and `AIRI_REPORT_CMD` (see `src/commerce/credentials.ts`).
+Real headless Chromium against the local test storefront. Merchant payments create live Airwallex payment intents; confirming the card switches to the card emulator if the account lacks native API access for payments. Real-merchant checkout needs Airi CLI access: set `AIRI_MANDATE_CMD`, `AIRI_CREDENTIALS_CMD` and `AIRI_REPORT_CMD` (see `src/commerce/credentials.ts`).
 
 ## Run it
 

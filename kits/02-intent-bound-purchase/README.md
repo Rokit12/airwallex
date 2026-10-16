@@ -13,7 +13,7 @@ A SaaS vendor offers USD 1,200 per month or USD 11,808 per year up front (18% ch
 
 ## Live or emulated
 
-Wallet, deposit, forecast and cardholder are live. Card issuing runs on the card emulator until Airwallex enables it for the account.
+Fully live: wallet, deposit, forecast, cardholder, virtual card issuing, card controls, and every authorization and decline (Airwallex itself declines the over-limit, wrong-currency, wrong-merchant and inactive-card attempts). If an account does not have card issuing enabled, cards switch to the card emulator and the run is labelled EMULATED.
 
 ## Run it
 

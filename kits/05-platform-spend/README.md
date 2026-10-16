@@ -13,7 +13,7 @@ A card platform for small businesses. Each customer is a connected account with 
 
 ## Live or emulated
 
-Runs on the platform emulator until Airwallex enables connected accounts; switches to live automatically.
+Card issuing is live: real virtual cards, card controls and authorizations (see below). Customers' wallets, bridge transfers and fee charges run on the platform emulator until Airwallex enables connected accounts, then switch to live automatically. FX is live.
 
 ## Run it
 

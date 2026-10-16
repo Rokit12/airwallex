@@ -12,7 +12,7 @@ A chargeback queue at an online merchant. The merchant pays a USD 25 chargeback 
 
 ## Live or emulated
 
-Evidence uploads are live. Payments and disputes run on the card emulator until Airwallex enables card acceptance for the account.
+Payment intents are created live and evidence uploads are live. The guide says this kit needs no enablement, but some sandbox accounts refuse to confirm a card by API (`This account is not enabled for native API access`). When that happens, the live intent is handed to the card emulator, and the payment and its disputes are labelled EMULATED. Once Airwallex enables native API access, the whole kit runs live with no code changes.
 
 ## Run it
 

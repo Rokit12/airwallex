@@ -91,7 +91,13 @@ npm run kit1                 # … through npm run kit10
 npm run demo                 # kit 1 then kit 3
 ```
 
-Approval prompts wait for your answer in the terminal.
+Approval prompts wait for your answer in the terminal (type `y` and press Enter).
+
+To run all ten agents one after another without stopping, approving everything automatically:
+
+```sh
+APPROVE=yes npm run record   # every kit, end to end; each run saved to runs/console/
+```
 
 ### Let Claude shop the test store (kits 9 and 10)
 

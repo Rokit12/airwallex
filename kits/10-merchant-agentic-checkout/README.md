@@ -14,7 +14,7 @@ A merchant sells through Claude. Its 120-product catalogue and checkout are expo
 
 ## Live or emulated
 
-Test storefront MCP server; payments through Airwallex payment intents (card emulator until card acceptance is enabled). Airwallex's own merchant MCP endpoint replaces the store's once merchant-side Agentic Commerce is enabled.
+Test storefront MCP server and hosted payment page. Payments create live Airwallex payment intents; confirming the card switches to the card emulator if the account lacks native API access for payments. Airwallex's own merchant MCP endpoint replaces the store's once merchant-side Agentic Commerce is enabled.
 
 ## Run it
 
