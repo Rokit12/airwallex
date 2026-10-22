@@ -1,0 +1,441 @@
+<title>Airwallex Agent Console</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: operator console — kit rail on the left, the selected run's live timeline on the right; approvals interrupt the timeline as the one loud element. */
+:root {
+  --bg: #f3f4f7; --panel: #ffffff; --sunk: #eef0f5; --ink: #141a2b; --muted: #5d6478; --line: #dfe2ea;
+  --accent: #e2531f; --accent-soft: #fbe6dc;
+  --ok: #18794e; --ok-soft: #dcf2e6; --warn: #9a6200; --warn-soft: #fbefd3; --bad: #b42318; --bad-soft: #fde4e1;
+  --idle: #8a90a2; --idle-soft: #eceef3; --focus: #2f5bd3;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1320; --panel: #171c2c; --sunk: #12172a; --ink: #e8eaf2; --muted: #9aa1b6; --line: #2a3045;
+    --accent: #ff7a45; --accent-soft: #3a2219; --ok: #4cc38a; --ok-soft: #14301f; --warn: #e9b44c; --warn-soft: #33270f;
+    --bad: #ff7b6e; --bad-soft: #3a1a17; --idle: #7d849a; --idle-soft: #22283a; --focus: #7d9cff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1320; --panel: #171c2c; --sunk: #12172a; --ink: #e8eaf2; --muted: #9aa1b6; --line: #2a3045;
+  --accent: #ff7a45; --accent-soft: #3a2219; --ok: #4cc38a; --ok-soft: #14301f; --warn: #e9b44c; --warn-soft: #33270f;
+  --bad: #ff7b6e; --bad-soft: #3a1a17; --idle: #7d849a; --idle-soft: #22283a; --focus: #7d9cff; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font: 14.5px/1.55 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 18px 40px;
+}
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mono, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.eyebrow { font: 500 0.7rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+
+.shell { max-width: 1280px; margin: 0 auto; display: grid; gap: 16px; }
+.topbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.brand h1 { font-size: 1.45rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 0.72rem/1 var(--font-mono); padding: 6px 9px; border-radius: 999px; white-space: nowrap; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.ok { color: var(--ok); background: var(--ok-soft); } .pill.warn { color: var(--warn); background: var(--warn-soft); }
+.pill.bad { color: var(--bad); background: var(--bad-soft); } .pill.idle { color: var(--idle); background: var(--idle-soft); }
+.pill.accent { color: var(--accent); background: var(--accent-soft); }
+.pill.live::before { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .pill.live::before { animation: none; } .ev { animation: none !important; } }
+
+.grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+/* Kit rail */
+.rail { display: grid; gap: 10px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+@media (max-width: 860px) {
+  .rail { position: static; }
+  #kits { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 70%); gap: 10px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; }
+  #kits .kit { scroll-snap-align: start; }
+  #kits .sum, .rail .later { display: none; }
+}
+.kit { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 8px; text-align: left; color: inherit; cursor: pointer; width: 100%; }
+.kit:hover { border-color: var(--idle); }
+.kit[aria-current="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.kit .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.kit .name { font-weight: 600; line-height: 1.3; }
+.kit .sum { font-size: 0.83rem; color: var(--muted); }
+.later { background: var(--panel); border: 1px dashed var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; font-size: 0.82rem; color: var(--muted); }
+.later b { color: var(--ink); font-weight: 600; }
+
+/* Run */
+.run { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; min-width: 0; }
+.run-head { padding: 18px 20px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: start; }
+.run-head h2 { font-size: 1.3rem; }
+.run-head .sub { color: var(--muted); font-size: 0.88rem; margin-top: 4px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 8px 14px; cursor: pointer; font-weight: 600; font-size: 0.85rem; }
+.btn:hover { border-color: var(--idle); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.approve { background: var(--ok); border-color: var(--ok); color: #fff; }
+.btn.decline { color: var(--bad); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.timeline { padding: 8px 20px 24px; display: grid; gap: 4px; }
+.empty { padding: 48px 20px; text-align: center; color: var(--muted); display: grid; gap: 8px; justify-items: center; }
+.ev { animation: rise .25s ease-out; min-width: 0; }
+@keyframes rise { from { opacity: .3; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+.beat { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); display: grid; gap: 4px; }
+.beat:first-child { border-top: 0; margin-top: 4px; }
+.beat .lbl { font: 500 0.7rem/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.beat.newinfo .lbl { color: var(--warn); }
+.beat .txt { font-weight: 600; font-size: 1rem; }
+.line { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 6px; font-size: 0.88rem; padding: 2px 0; overflow-wrap: anywhere; }
+.line .ic { text-align: center; }
+.line.step { color: var(--muted); } .line.ok .ic { color: var(--ok); } .line.warn .ic { color: var(--warn); } .line.fail .ic { color: var(--bad); }
+.line.warn .tx { color: var(--ink); }
+
+.decision { margin: 6px 0; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; background: var(--sunk); }
+.decision .hd { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.decision .subj { font-weight: 600; }
+.decision .why { color: var(--muted); font-size: 0.86rem; }
+.act { font: 600 0.74rem/1 var(--font-mono); padding: 6px 9px; border-radius: 6px; letter-spacing: .02em; }
+.act.ok { color: var(--ok); background: var(--ok-soft); } .act.accent { color: var(--accent); background: var(--accent-soft); }
+.act.warn { color: var(--warn); background: var(--warn-soft); } .act.bad { color: var(--bad); background: var(--bad-soft); }
+
+.tblwrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; margin: 8px 0; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font: 500 0.68rem/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: var(--sunk); }
+td.n { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: 0; }
+td .bad { color: var(--bad); } td .good { color: var(--ok); }
+
+.doc { margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--sunk); overflow: hidden; }
+.doc .dh { padding: 8px 12px; border-bottom: 1px solid var(--line); font: 500 0.7rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.doc pre { margin: 0; padding: 10px 12px; font: 0.8rem/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.approval { margin: 10px 0; border: 2px solid var(--accent); border-radius: 12px; padding: 14px; display: grid; gap: 10px; background: var(--panel); }
+.approval.done-yes { border-color: var(--ok); } .approval.done-no { border-color: var(--bad); }
+.approval .ctx { font-weight: 600; }
+.approval dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; font-size: 0.84rem; }
+.approval dt { color: var(--muted); font-family: var(--font-mono); font-size: 0.76rem; padding-top: 2px; }
+.approval dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.approval .foot { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.approval .hash { font: 0.72rem var(--font-mono); color: var(--muted); }
+.raw { font: 0.76rem/1.5 var(--font-mono); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.finish { margin-top: 16px; border-radius: 10px; padding: 12px 14px; font-weight: 600; }
+.finish.ok { background: var(--ok-soft); color: var(--ok); } .finish.bad { background: var(--bad-soft); color: var(--bad); }
+.finish .err { font: 400 0.8rem var(--font-mono); color: var(--ink); margin-top: 6px; overflow-wrap: anywhere; }
+</style>
+
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <h1>Agent Console</h1>
+      <span class="eyebrow" id="biz">Trailhead Outfitters LLC · United States of America · USD</span>
+    </div>
+    <div class="chips" id="modechips"><span class="pill idle">Connecting…</span></div>
+  </header>
+
+  <div class="grid">
+    <nav class="rail" aria-label="Kits">
+      <div id="kits" style="display:grid;gap:10px"></div>
+    </nav>
+
+    <main class="run" aria-live="polite">
+      <div class="run-head">
+        <div>
+          <div class="eyebrow" id="runTrack">Select a kit</div>
+          <h2 id="runName">Agent Console</h2>
+          <div class="sub" id="runSub">Pick a kit on the left to run it, or to view its recorded run.</div>
+        </div>
+        <div class="controls" id="runControls"></div>
+      </div>
+      <div class="timeline" id="timeline">
+        <div class="empty">Each run shows the agent's goal, its plan, the new information it gets, how its decision changes, and what it did with the money. Approvals stop the run until a person answers.</div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+const REPLAY = window.__REPLAY__ || null; // set when the page is built for replay without a backend
+const KIT_FALLBACK = [
+  { id: "01", name: "Adaptive Treasury Controller", track: "Treasury & Ops", summary: "Fund, convert, defer or escalate five obligations when cash is short." },
+  { id: "02", name: "Intent-Bound Purchase Agent", track: "Expense & Policy", summary: "Choose SaaS terms from a cash forecast and enforce them with card controls." },
+  { id: "03", name: "Payment Ops Incident Commander", track: "Treasury & Ops", summary: "Resolve a missing supplier payment without paying twice." },
+  { id: "04", name: "Dispute Response Agent", track: "Revenue Protection", summary: "Accept, challenge or escalate chargebacks on evidence and cost." },
+  { id: "05", name: "Platform Spend Controller", track: "Multi-Tenant Platforms", summary: "Issue customer cards and ration scarce bridge capital when deposits are late." },
+  { id: "06", name: "Multi-Employer Payroll Executor", track: "Multi-Tenant Platforms", summary: "Run payroll for three employers without using one employer's funds for another." },
+  { id: "07", name: "Portfolio Lending Agent", track: "Dynamic Lending", summary: "Collect revenue-based repayments and size an advance above the reserve floor." },
+  { id: "08", name: "Marketplace Settlement Agent", track: "Multi-Tenant Platforms", summary: "Set seller reserves, pay net proceeds, and re-reserve when risk changes." },
+  { id: "09", name: "Approval-Bound Shopping Agent", track: "Agentic Commerce", summary: "Shop a merchant site in a browser and pay only for the exact approved terms." },
+  { id: "10", name: "Merchant-Enabled Agentic Checkout", track: "Agentic Commerce", summary: "Sell through Claude with merchant MCP tools and a hosted payment page." },
+  { id: "11", name: "x402 Business Agents", track: "Agent Payments", summary: "Run three agents from one Metal account; move their limits when a supplier's price rises." },
+  { id: "12", name: "Inference Sourcing Agent", track: "Inference Sourcing", summary: "Buy every AI step at the live price; reroute and ration the float when budgets or speed change." },
+];
+
+const state = { kits: [], selected: null, status: {}, runs: {}, live: !REPLAY, emulated: {}, timers: [] };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* ── Formatting ─────────────────────────────────────────── */
+function actionClass(a) {
+  const s = String(a).toUpperCase();
+  if (/BLOCK|BREACH/.test(s)) return "bad";
+  if (/ESCALATE|TRACE|VERIFY|DEFER|FREEZE|ASK|WAIT|→/.test(s)) return "warn";
+  if (/CHALLENGE|CONVERT|REPLACE/.test(s)) return "accent";
+  return "ok";
+}
+function fmtCell(v) {
+  if (typeof v === "number") return { cls: "n", html: v.toLocaleString("en-US", { maximumFractionDigits: 2 }) };
+  if (v === true) return { cls: "", html: "yes" };
+  if (v === false) return { cls: "", html: "" };
+  const s = String(v ?? "");
+  if (s === "✔") return { cls: "", html: '<span class="good">✔</span>' };
+  if (s === "✖" || /BELOW FLOOR/.test(s)) return { cls: "", html: `<span class="bad">${esc(s)}</span>` };
+  return { cls: /^-?[\d,.]+$/.test(s) ? "n" : "", html: esc(s.length > 42 && !/\s/.test(s) ? "…" + s.slice(-16) : s) };
+}
+function table(rows) {
+  if (!rows || !rows.length) return "";
+  const cols = Object.keys(rows[0]);
+  return `<div class="tblwrap"><table><thead><tr>${cols.map((c) => `<th>${esc(c.replace(/_/g, " "))}</th>`).join("")}</tr></thead><tbody>${rows
+    .map((r) => `<tr>${cols.map((c) => { const f = fmtCell(r[c]); return `<td class="${f.cls}">${f.html}</td>`; }).join("")}</tr>`)
+    .join("")}</tbody></table></div>`;
+}
+function termsList(t) {
+  return `<dl>${Object.entries(t)
+    .map(([k, v]) => {
+      let val = Array.isArray(v) ? v.map((x) => (typeof x === "object" ? Object.values(x).join(" ") : String(x).length > 28 && !/\s/.test(String(x)) ? "…" + String(x).slice(-12) : x)).join(", ") : typeof v === "object" ? JSON.stringify(v) : v;
+      return `<dt>${esc(k.replace(/_/g, " "))}</dt><dd>${esc(val)}</dd>`;
+    })
+    .join("")}</dl>`;
+}
+
+/* ── Rendering one event ────────────────────────────────── */
+function render(ev, { interactive }) {
+  const el = document.createElement("div");
+  el.className = "ev";
+  switch (ev.type) {
+    case "title":
+      $("runSub").textContent = `${ev.business} · ${ev.country} · ${ev.currency}`;
+      return null;
+    case "beat":
+      el.className = `ev beat${/NEW INFORMATION/i.test(ev.label) ? " newinfo" : ""}`;
+      el.innerHTML = `<span class="lbl">${esc(ev.label)}</span><span class="txt">${esc(ev.text)}</span>`;
+      break;
+    case "step":
+    case "ok":
+    case "warn":
+    case "fail": {
+      const ic = { step: "·", ok: "✔", warn: "!", fail: "✖" }[ev.type];
+      el.className = `ev line ${ev.type}`;
+      el.innerHTML = `<span class="ic">${ic}</span><span class="tx">${esc(ev.text)}</span>`;
+      if (/card emulator|platform emulator|metal emulator/i.test(ev.text)) markEmulated(/metal emulator/i.test(ev.text) ? "Metal rail emulated" : /platform emulator/i.test(ev.text) ? "Platform rail emulated" : "Card rail emulated");
+      break;
+    }
+    case "decision":
+      el.className = "ev decision";
+      el.innerHTML = `<div class="hd"><span class="subj">${esc(ev.subject)}</span><span class="act ${actionClass(ev.action)}">${esc(ev.action)}</span></div><div class="why">${esc(ev.why)}</div>`;
+      break;
+    case "table":
+      el.innerHTML = table(ev.rows);
+      break;
+    case "document": {
+      const lines = String(ev.text).split("\n");
+      el.className = "ev doc";
+      el.innerHTML = `<div class="dh">Incoming document</div><pre>${lines.map((l) => (/^(From|To|Subject):/.test(l) ? `<b>${esc(l)}</b>` : esc(l))).join("\n")}</pre>`;
+      break;
+    }
+    case "approval_request":
+      el.className = "ev approval";
+      el.id = `ap-${ev.id}`;
+      el.innerHTML = `<div class="eyebrow" style="color:var(--accent)">Approval needed</div><div class="ctx">${esc(ev.context)}</div>${termsList(ev.terms)}
+        <div class="foot"><span class="hash">bound to terms hash ${esc(ev.termsHash)}</span>
+        <span class="controls" data-slot>${interactive ? `<button class="btn decline" data-no>Decline</button><button class="btn approve" data-yes>Approve these terms</button>` : `<span class="pill warn">Waiting…</span>`}</span></div>`;
+      if (interactive) {
+        el.querySelector("[data-yes]").onclick = () => answer(ev.id, true, el);
+        el.querySelector("[data-no]").onclick = () => answer(ev.id, false, el);
+        setStatus(state.selected, "approval");
+      }
+      break;
+    case "approval_result": {
+      const card = $(`ap-${ev.id}`);
+      if (card) {
+        card.classList.add(ev.approved ? "done-yes" : "done-no");
+        card.querySelector("[data-slot]").innerHTML = `<span class="pill ${ev.approved ? "ok" : "bad"}">${ev.approved ? `Approved by ${esc(ev.by)}` : `Declined by ${esc(ev.by)}`}</span>`;
+      }
+      if (state.status[state.selected] === "approval") setStatus(state.selected, "running");
+      return null;
+    }
+    case "run_started":
+      return null;
+    case "run_finished":
+      el.className = `ev finish ${ev.code ? "bad" : "ok"}`;
+      el.innerHTML = ev.code ? `Run stopped with an error<div class="err">${esc(ev.error || "")}</div>` : "Run finished";
+      setStatus(state.selected, ev.code ? "failed" : REPLAY ? "recorded" : "done");
+      break;
+    case "raw":
+      el.className = "ev raw";
+      el.textContent = ev.text;
+      break;
+    default:
+      return null;
+  }
+  return el;
+}
+
+function markEmulated(label) {
+  state.emulated[state.selected] = label || state.emulated[state.selected] || "Card rail emulated";
+  renderHeadChips();
+}
+
+/* ── Kit rail and header ─────────────────────────────────── */
+const STATUS = { idle: ["Not run", "idle"], running: ["Running", "accent live"], approval: ["Needs approval", "warn live"], done: ["Finished", "ok"], failed: ["Error", "bad"], recorded: ["Recorded run", "ok"] };
+function setStatus(id, s) {
+  state.status[id] = s;
+  renderKits();
+  renderHeadChips();
+}
+function renderKits() {
+  $("kits").innerHTML = state.kits
+    .map((k) => {
+      const [label, cls] = STATUS[state.status[k.id] || (REPLAY ? "recorded" : "idle")];
+      return `<button class="kit" data-kit="${k.id}" aria-current="${state.selected === k.id}">
+        <span class="row"><span class="eyebrow">Kit ${k.id} · ${esc(k.track)}</span></span>
+        <span class="name">${esc(k.name)}</span><span class="sum">${esc(k.summary)}</span>
+        <span class="row"><span class="pill ${cls}">${label}</span></span></button>`;
+    })
+    .join("");
+  for (const b of document.querySelectorAll("[data-kit]")) b.onclick = () => select(b.dataset.kit);
+}
+function renderHeadChips() {
+  const chips = [];
+  chips.push(REPLAY ? `<span class="pill idle">Replay of recorded sandbox runs</span>` : `<span class="pill ok">Airwallex sandbox</span>`);
+  if (state.selected && state.emulated[state.selected]) chips.push(`<span class="pill warn">${typeof state.emulated[state.selected] === "string" ? state.emulated[state.selected] : [5, 6, 7, 8].includes(Number(state.selected)) ? "Platform rail emulated" : [11, 12].includes(Number(state.selected)) ? "Metal rail emulated" : "Card rail emulated"}</span>`);
+  $("modechips").innerHTML = chips.join("");
+}
+
+function select(id) {
+  state.selected = id;
+  state.timers.forEach(clearTimeout);
+  state.timers = [];
+  const k = state.kits.find((x) => x.id === id);
+  $("runTrack").textContent = `Kit ${k.id} · ${k.track}`;
+  $("runName").textContent = k.name;
+  $("runSub").textContent = k.summary;
+  renderKits();
+  if (REPLAY) showReplay(id, false);
+  else showLive(id);
+}
+
+/* ── Replay mode ────────────────────────────────────────── */
+function showReplay(id, animate) {
+  const rec = REPLAY.runs.find((r) => r.kit.id === id);
+  const tl = $("timeline");
+  tl.innerHTML = "";
+  $("runControls").innerHTML = rec ? `<button class="btn primary" id="play">${animate ? "Restart replay" : "Replay run"}</button>` : "";
+  if (!rec) {
+    tl.innerHTML = `<div class="empty">No recorded run for this kit yet.</div>`;
+    return;
+  }
+  $("play").onclick = () => showReplay(id, true);
+  state.emulated[id] = false;
+  const evs = rec.events;
+  if (!animate) {
+    for (const ev of evs) { const el = render(ev, { interactive: false }); if (el) tl.appendChild(el); }
+    renderHeadChips();
+    return;
+  }
+  setStatus(id, "running");
+  let delay = 0;
+  evs.forEach((ev, i) => {
+    const gap = i ? Math.min(900, Math.max(120, (ev.t - evs[i - 1].t) * 0.6)) : 0;
+    delay += ev.type === "beat" ? Math.max(gap, 500) : gap;
+    state.timers.push(setTimeout(() => {
+      const el = render(ev, { interactive: false });
+      if (el) { tl.appendChild(el); el.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); }
+      if (i === evs.length - 1 && state.status[id] === "running") setStatus(id, "recorded");
+    }, delay));
+  });
+}
+
+/* ── Live mode ──────────────────────────────────────────── */
+function showLive(id) {
+  const tl = $("timeline");
+  const evs = state.runs[id] || [];
+  tl.innerHTML = evs.length ? "" : `<div class="empty">Ready to run against the Airwallex sandbox. Money moves in the sandbox only.</div>`;
+  for (const ev of evs) { const el = render(ev, { interactive: isPending(ev, evs) }); if (el) tl.appendChild(el); }
+  const busy = Object.values(state.status).some((s) => s === "running" || s === "approval");
+  $("runControls").innerHTML = `<button class="btn primary" id="go" ${busy ? "disabled" : ""}>${evs.length ? "Run again" : "Run agent"}</button>`;
+  $("go").onclick = () => run(id);
+}
+function isPending(ev, evs) {
+  return ev.type === "approval_request" && !evs.some((e) => e.type === "approval_result" && e.id === ev.id) && !evs.some((e) => e.type === "run_finished");
+}
+async function run(id) {
+  state.runs[id] = [];
+  state.emulated[id] = false;
+  setStatus(id, "running");
+  showLive(id);
+  $("go").disabled = true;
+  const res = await fetch(`/api/run/${id}`, { method: "POST" });
+  if (!res.ok) {
+    const { error } = await res.json().catch(() => ({ error: "Could not start the run." }));
+    $("timeline").insertAdjacentHTML("beforeend", `<div class="finish bad">${esc(error)}</div>`);
+    setStatus(id, "failed");
+  }
+}
+async function answer(evId, approve, card) {
+  card.querySelectorAll("button").forEach((b) => (b.disabled = true));
+  await fetch("/api/approve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: evId, approve, by: "operator" }) });
+}
+let currentRunKit = null;
+function connect() {
+  const es = new EventSource("/api/events");
+  es.onopen = renderHeadChips;
+  es.onerror = () => ($("modechips").innerHTML = `<span class="pill bad">Console server offline</span>`);
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    if (ev.type === "run_started") { currentRunKit = ev.kit; state.runs[ev.kit] = []; if (!state.status[ev.kit] || state.status[ev.kit] === "idle") setStatus(ev.kit, "running"); }
+    const kit = currentRunKit;
+    if (!kit) return;
+    const list = (state.runs[kit] ||= []);
+    if (list.some((e) => e.seq === ev.seq && e.type === ev.type)) return;
+    list.push(ev);
+    if (state.selected === kit) {
+      const el = render(ev, { interactive: ev.type === "approval_request" });
+      if (el) { $("timeline").querySelector(".empty")?.remove(); $("timeline").appendChild(el); el.scrollIntoView({ block: "nearest" }); }
+      if (ev.type === "run_finished") showLive(kit);
+    } else if (ev.type === "run_finished") setStatus(kit, ev.code ? "failed" : "done");
+  };
+}
+
+/* ── Boot ───────────────────────────────────────────────── */
+(async function boot() {
+  if (REPLAY) {
+    state.kits = KIT_FALLBACK;
+    renderKits();
+    renderHeadChips();
+    select(location.hash.replace("#kit", "") || "01");
+    return;
+  }
+  try {
+    const r = await fetch("/api/kits");
+    state.kits = (await r.json()).kits;
+  } catch {
+    state.kits = KIT_FALLBACK;
+  }
+  renderKits();
+  renderHeadChips();
+  connect();
+  select("01");
+})();
+</script>

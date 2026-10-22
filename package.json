@@ -1,0 +1,54 @@
+{
+  "name": "airwallex-agent-desk",
+  "version": "1.0.0",
+  "description": "Ten agentic-banking agents on the Airwallex sandbox: treasury, payment incidents, card controls, disputes, platforms, lending, settlement and agentic commerce.",
+  "scripts": {
+    "check": "tsx src/core/check.ts",
+    "fund": "tsx src/core/check.ts --fund",
+    "metal:check": "tsx src/metal/check.ts",
+    "console": "tsx src/console/server.ts",
+    "kit1": "tsx kits/01-adaptive-treasury/run.ts",
+    "kit2": "tsx kits/02-intent-bound-purchase/run.ts",
+    "kit3": "tsx kits/03-payment-ops-incident/run.ts",
+    "kit4": "tsx kits/04-dispute-response/run.ts",
+    "kit5": "tsx kits/05-platform-spend/run.ts",
+    "kit6": "tsx kits/06-multi-employer-payroll/run.ts",
+    "kit7": "tsx kits/07-portfolio-lending/run.ts",
+    "kit8": "tsx kits/08-marketplace-settlement/run.ts",
+    "kit9": "tsx kits/09-approval-bound-shopping/run.ts",
+    "kit10": "tsx kits/10-merchant-agentic-checkout/run.ts",
+    "kit11": "tsx kits/11-x402-business-agents/run.ts",
+    "kit12": "tsx kits/12-inference-sourcing/run.ts",
+    "demo": "tsx kits/01-adaptive-treasury/run.ts && tsx kits/03-payment-ops-incident/run.ts",
+    "store": "tsx src/commerce/standalone.ts",
+    "record": "tsx src/console/record.ts",
+    "build:replay": "tsx src/console/build-replay.ts",
+    "setup:browser": "playwright install chromium",
+    "test": "tsx --test kits/*/policy.test.ts",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm test"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "playwright": "^1.56.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@metalntwx/metal-agent": "^0.3.1",
+    "@metalntwx/metal-pay": "^0.3.1",
+    "@types/express": "^4.17.25",
+    "@x402/core": "^2.28.0",
+    "@x402/evm": "^2.28.0",
+    "@x402/express": "^2.28.0",
+    "@x402/fetch": "^2.28.0",
+    "express": "^4.22.3",
+    "viem": "^2.57.10"
+  }
+}
