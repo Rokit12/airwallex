@@ -22,6 +22,7 @@ These are switches on Airwallex's side. The kits run on emulators in the meantim
 | `configuration_error: Invalid request against merchant configuration` | Kits 4, 9, 10 (payments) | Card acceptance / payment intents |
 | `This account is not enabled for native API access` (on `/confirm`) | Kits 4, 9, 10 (card confirmation) | Native API access for payments, or use Airwallex's hosted page / Drop-in element so card details never touch your server |
 | `This account cannot onboard business accounts` | Kits 5–8 | Connected accounts **and** platform payments |
+| `unconfigured_client_fee` (FX) or `fee_unknown` (transfers) on a connected account | Kits 6, 7 | Fee pricing for FX and payouts inside connected accounts. Meanwhile the kits route these through the platform account, live |
 
 | Metal: `mandate bind` → `would fail: Execution reverted for an unknown reason` | Kit 11 (spending limits) | Reported to Metal: it happens on Metal testnet for every account, their documented example included. Kit 11 runs its limits on the Metal emulator meanwhile |
 
@@ -34,6 +35,13 @@ To check whether a feature is live, run a kit with `RAILS=live`.
 | `no METAL_RPC_URL set` | Create an endpoint at https://console-testnet.metalntwx.com (billing accepts an Airwallex sandbox test card) and add `METAL_RPC_URL` to `.env` |
 | `ENOTFOUND` from the faucet or facilitator | Behind a proxy on Node 22+, run with `NODE_USE_ENV_PROXY=1` |
 | Faucet refuses | Ten grants per IP per UTC day, one client per minute; retry later or fund from the console's Faucet page | It fails fast instead of falling back to the emulator.
+
+## Connected accounts (kits 5–8)
+
+| What you see | Meaning |
+|---|---|
+| `field_required` on `/accounts/{id}/submit` (`description_of_goods_or_services`, `identifications.primary`) | Submitting a business needs a description and an ID document for each business person. `src/core/platform.ts` sends both; the ID is a clearly labelled specimen PDF uploaded through the files API |
+| `403 Account not ready!` or `401` right after activation | A just-activated account can refuse for a few seconds. `onboardAndFund` retries with the same `request_id` |
 
 ## During a run
 

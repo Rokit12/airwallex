@@ -13,7 +13,7 @@ Buyers pay the marketplace; three sellers hold connected accounts. The platform 
 
 ## Live or emulated
 
-Runs on the platform emulator until Airwallex enables connected accounts.
+Fully live: seller connected accounts, sales, reserves, net payouts and refund recovery.
 
 ## Run it
 

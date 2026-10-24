@@ -13,7 +13,7 @@ A card platform for small businesses. Each customer is a connected account with 
 
 ## Live or emulated
 
-Card issuing and card controls are live (see below). Customers' wallets, bridge transfers and fee charges run on the platform emulator until Airwallex enables connected accounts, then switch to live automatically. Card authorizations fall back to the emulator while Airwallex's authorization simulator is unavailable. FX is live.
+Fully live: three connected accounts opened, submitted and activated (KYC with a clearly labelled specimen ID document), a cardholder and virtual card on each customer's own account, authorizations and declines, the bridge transfer, the repayment and the fees. Without connected accounts the wallets fall back to the platform emulator while cards stay live (see below).
 
 ## Run it
 

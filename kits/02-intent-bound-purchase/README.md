@@ -13,7 +13,7 @@ A SaaS vendor offers USD 1,200 per month or USD 11,808 per year up front (18% ch
 
 ## Live or emulated
 
-Live: wallet, deposit, forecast, cardholder, virtual card issuing and card controls (including pausing and reactivating the card). Authorizations ran live on Airwallex until the account's authorization simulator started returning `failed to process transaction`; while it does, each authorization is checked by the card emulator against the live card's current controls and the run is labelled EMULATED. It switches back automatically.
+Fully live: wallet, deposit, forecast, cardholder, virtual card issuing, card controls, and every authorization and decline (Airwallex itself declines the over-limit, wrong-currency, wrong-merchant and inactive-card attempts). If an account's card issuing or authorization simulator is unavailable, that part switches to the card emulator and the run is labelled EMULATED.
 
 ## Run it
 

@@ -12,7 +12,7 @@ A platform funds revenue-based advances. Borrowers repay a share of each week's 
 
 ## Live or emulated
 
-Runs on the platform emulator until Airwallex enables connected accounts.
+Fully live: borrower connected accounts, revenue deposits, repayment charges and the advance. A borrower's own supplier payment is routed through the platform account (charged to that borrower first) because payouts inside connected accounts are not priced on our account yet.
 
 ## Run it
 

@@ -13,7 +13,7 @@ Weekly contractor payroll in USD, EUR and GBP for three employers, each a connec
 
 ## Live or emulated
 
-Runs on the platform emulator until Airwallex enables connected accounts. FX rates are live.
+Fully live: three employer connected accounts, payroll funding, a platform advance, FX and contractor payouts in EUR, USD and GBP. Airwallex has not configured fee pricing for FX and payouts inside connected accounts on our account, so those are routed through the platform account, live: the employer's own balance is charged, the platform converts or pays the contractor, and converted money returns to that employer. No employer's money ever pays for another.
 
 ## Run it
 

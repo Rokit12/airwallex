@@ -236,21 +236,23 @@ Faucet limits: ten grants per IP per UTC day, one per minute. Each grant tops an
 
 ## Live and emulated
 
-Every kit calls the real Airwallex sandbox first. If Airwallex refuses a feature that hasn't been enabled for the account, only that part of the run switches to an emulator built from documented behaviour. The console labels it **Card rail emulated**, **Platform rail emulated** or **Metal rail emulated**, and the run explains why. The same code goes live as soon as the feature is enabled.
+Every kit calls the real Airwallex sandbox first. If Airwallex refuses a feature that hasn't been enabled for an account, only that part of the run switches to an emulator built from documented behaviour. The console labels it **Card rail emulated**, **Platform rail emulated** or **Metal rail emulated**, and the run explains why. The same code goes live as soon as the feature is enabled.
 
-Status on our US sandbox account:
+Status on our US sandbox account: **every Airwallex call in all twelve kits runs live.**
 
-| Kits | Live | Emulated until enabled or fixed |
+| Kits | Live on Airwallex | Not live yet |
 |---|---|---|
-| 1, 3 | Everything: FX, SWIFT and ACH payouts, bank returns | – |
-| 2 | Wallet, forecast, cardholder, **virtual card issuing and card controls** | Card authorizations, while Airwallex's authorization simulator returns `failed to process transaction` |
-| 4 | **Everything: payments, real disputes (accept, challenge, escalate, resolve), evidence uploads** | – |
-| 5 | **Virtual cards and card controls**; FX | Connected accounts and platform payments; card authorizations (as kit 2) |
-| 6–8 | FX rates and quotes | Connected accounts and platform payments |
-| 9 | **Headless browser shopping and live card payments** on the test storefront | Airi CLI for real merchants (test card until access arrives) |
-| 10 | **Merchant MCP server, hosted payment page, live payments and declines** | Airwallex's own merchant-side Agentic Commerce endpoint |
-| 11 | **Deposits credited by Metal transaction hash, duplicate check, FX, GBP Faster Payments payout** | Metal spending limits (binding a mandate reverts on Metal testnet) |
-| 12 | **Card pre-authorization holds, increments, single captures, cancels** | Metal clearing (live adapter not wired yet) |
+| 1, 3 | FX, SWIFT and ACH payouts, bank returns | – |
+| 2 | Virtual card issuing, card controls, authorizations and declines | – |
+| 4 | Payments, real disputes (accept, challenge, escalate, resolve), evidence uploads | – |
+| 5 | Connected accounts (KYC, submit, activate), cards issued on each customer's behalf, authorizations, bridge transfers, fee charges | – |
+| 6, 7 | Connected accounts, payroll and loan flows, FX and payouts | – (FX and payouts inside connected accounts are routed through the platform account, see below) |
+| 8 | Connected accounts, seller payouts, reserves, refunds | – |
+| 9, 10 | Browser shopping, merchant MCP checkout, live card payments and declines | Airi CLI and Airwallex's merchant-side Agentic Commerce (awaiting access; the test card and local merchant MCP run meanwhile) |
+| 11 | Deposits credited by Metal transaction hash, FX, GBP Faster Payments payout | Metal spending limits (binding a mandate reverts on Metal testnet) |
+| 12 | Card pre-authorization holds, increments, single captures, cancels | Metal clearing (live adapter not wired yet) |
+
+**FX and payouts inside connected accounts.** Airwallex has not configured fee pricing for FX conversions and payouts made on a connected account's behalf (`unconfigured_client_fee`, `fee_unknown`). Kits 6 and 7 then route those operations through the platform account, live: the customer's own balance is charged, the platform converts or pays out, and converted money goes back to the customer. Each customer's money still only pays for that customer.
 
 On Metal testnet, faucet funding and x402 payments are live: `npm run metal:check` proves it.
 
@@ -325,4 +327,3 @@ runs/                audit logs and run outputs (git-ignored)
 ## License
 
 [MIT](LICENSE). You are responsible for how you use keys, agents and these examples.
-# airwallex

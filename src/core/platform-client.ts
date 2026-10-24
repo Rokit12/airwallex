@@ -20,6 +20,8 @@ import { audit } from "./audit.ts";
 import { say } from "./narrate.ts";
 
 const LIVE_ALWAYS = /^\/(fx\/rates\/current|fx\/quotes\/create|reference\/)/;
+const FEE_UNCONFIGURED = new Set(["unconfigured_client_fee", "fee_unknown"]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const CARD_PATH = /^\/(issuing|simulation\/issuing)\//;
 type Controls = { transaction_limits?: { currency: string; limits: { amount: number; interval: string }[] }; [k: string]: unknown };
 
@@ -28,6 +30,11 @@ export class PlatformClient extends AirwallexClient {
   readonly emu: PlatformEmulator;
   /** Live card_id → { connected account it belongs to, controls the platform set }. */
   private readonly liveCards = new Map<string, { owner: string; controls: Controls }>();
+  /** Bodies of beneficiaries created on a customer's behalf, so a rerouted payout can recreate them on the platform. */
+  private readonly beneficiaryBodies = new Map<string, unknown>();
+  /** Transfers that were paid out from the platform account for a customer: id → customer. */
+  private readonly rerouted = new Map<string, string>();
+  private routeViaPlatform = false;
   /** Set when Airwallex's authorization simulator refuses this account. */
   private authEmulated = process.env.RAILS === "emulated";
 
@@ -45,9 +52,24 @@ export class PlatformClient extends AirwallexClient {
   override async call<T = any>(method: "GET" | "POST", path: string, opts: CallOptions = {}): Promise<T> {
     if (this.mode === "emulated" && CARD_PATH.test(path) && process.env.RAILS !== "emulated") return this.liveCard<T>(method, path, opts);
     if (this.mode === "emulated" && !LIVE_ALWAYS.test(path)) return this.emulate<T>(method, path, opts);
+    if (this.mode === "live") {
+      const t = path.match(/^\/(?:simulation\/)?transfers\/([\w-]+)/);
+      if (t && this.rerouted.has(t[1]!)) return super.call<T>(method, path, { ...opts, onBehalfOf: undefined });
+      if (this.routeViaPlatform && opts.onBehalfOf && method === "POST" && (path === "/fx/conversions/create" || path === "/transfers/create")) return this.viaPlatform<T>(path, opts);
+    }
     try {
-      return await super.call<T>(method, path, opts);
+      const res = await super.call<T>(method, path, opts);
+      if (method === "POST" && path === "/beneficiaries/create" && opts.onBehalfOf) this.beneficiaryBodies.set(String((res as any).id ?? (res as any).beneficiary_id), opts.body);
+      return res;
     } catch (err) {
+      if (err instanceof AwxError && FEE_UNCONFIGURED.has(err.code) && opts.onBehalfOf && method === "POST" && (path === "/fx/conversions/create" || path === "/transfers/create")) {
+        if (!this.routeViaPlatform) {
+          this.routeViaPlatform = true;
+          say.warn(`Airwallex has not configured FX and payout pricing inside connected accounts (${err.code}). Routing each customer's FX and payouts through the platform, live: the customer's own balance is charged, the platform converts or pays out, and converted money goes back to the customer. Customer funds are still never mixed.`);
+          audit({ kind: "rail_switch", rail: "connected_account_fx_payouts", to: "via_platform", cause: err.message });
+        }
+        return this.viaPlatform<T>(path, opts);
+      }
       if (err instanceof AwxError && path === "/accounts/create" && /cannot onboard/i.test(err.message) && process.env.RAILS !== "live") {
         this.mode = "emulated";
         say.warn(`Airwallex has not enabled connected accounts on this sandbox account ("${(err.message.split(" (")[0] ?? "").replace(/^400 \w+: /, "")}"). Running the platform rail on the platform emulator; FX rates stay live. Results are labelled EMULATED.`);
@@ -56,6 +78,66 @@ export class PlatformClient extends AirwallexClient {
       }
       throw err;
     }
+  }
+
+  /**
+   * Charge a customer. A deposit that just landed can take a moment to become
+   * available; insufficient_fund is a definite refusal (nothing was created), so
+   * each retry is a new request.
+   */
+  private async chargeOwner(body: Record<string, unknown>) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await super.call<any>("POST", "/charges/create", { body: { ...body, request_id: newRequestId() } });
+      } catch (err) {
+        if (!(err instanceof AwxError && err.code === "insufficient_fund") || attempt >= 6) throw err;
+        await sleep(2500);
+      }
+    }
+  }
+
+  private async settle(kind: "charges" | "connected_account_transfers", id: string) {
+    let status = "";
+    for (let i = 0; i < 16; i++) {
+      try {
+        status = (await super.call<any>("GET", `/${kind}/${id}`)).status;
+      } catch (err) {
+        if (!(err instanceof AwxError && err.status === 404) || i >= 10) throw err;
+        status = "NOT_VISIBLE_YET";
+      }
+      if (status === "SETTLED" || status === "FAILED") break;
+      await sleep(1500);
+    }
+    if (status !== "SETTLED") throw new Error(`${kind} ${id} ended ${status}`);
+  }
+
+  /**
+   * FX or a payout for a connected account, routed through the platform account
+   * (live). Only the customer's own balance funds it.
+   */
+  private async viaPlatform<T>(path: string, opts: CallOptions): Promise<T> {
+    const owner = opts.onBehalfOf!;
+    const b = (opts.body ?? {}) as any;
+    const ref = `ROUTED-${owner.slice(-6)}-${Date.now().toString(36)}`.toUpperCase();
+    if (path === "/fx/conversions/create") {
+      const q = await super.call<any>("POST", "/fx/quotes/create", { body: { request_id: newRequestId(), buy_currency: b.buy_currency, sell_currency: b.sell_currency, ...(b.buy_amount ? { buy_amount: b.buy_amount } : { sell_amount: b.sell_amount }), validity: "MIN_1" } });
+      const charge = await this.chargeOwner({ request_id: newRequestId(), amount: Number(q.sell_amount), currency: b.sell_currency, source: owner, reason: "professional_business_services", reference: `${ref}-FX` });
+      await this.settle("charges", charge.id);
+      const conv = await super.call<any>("POST", "/fx/conversions/create", { body: { request_id: b.request_id ?? newRequestId(), quote_id: q.quote_id, buy_currency: b.buy_currency, sell_currency: b.sell_currency, ...(b.buy_amount ? { buy_amount: b.buy_amount } : { sell_amount: b.sell_amount }) } });
+      const back = await super.call<any>("POST", "/connected_account_transfers/create", { body: { request_id: newRequestId(), amount: Number(conv.buy_amount), currency: b.buy_currency, destination: owner, reason: "business_expenses", reference: `${ref}-FX` } });
+      await this.settle("connected_account_transfers", back.id);
+      audit({ kind: "routed_via_platform", what: "fx", owner, charge: charge.id, conversion: conv.id, transfer_back: back.id });
+      return { ...conv, routed_via_platform: true, charge_id: charge.id, connected_account_transfer_id: back.id } as T;
+    }
+    const benBody = this.beneficiaryBodies.get(String(b.beneficiary_id));
+    if (!benBody) throw new Error(`cannot reroute payout: beneficiary ${b.beneficiary_id} was not created in this run`);
+    const ben = await super.call<any>("POST", "/beneficiaries/create", { body: { ...(benBody as object), request_id: newRequestId() } });
+    const charge = await this.chargeOwner({ request_id: newRequestId(), amount: Number(b.transfer_amount), currency: b.source_currency ?? b.transfer_currency, source: owner, reason: "professional_business_services", reference: `${ref}-PAYOUT` });
+    await this.settle("charges", charge.id);
+    const tr = await super.call<any>("POST", "/transfers/create", { body: { ...b, request_id: b.request_id ?? newRequestId(), beneficiary_id: ben.id ?? ben.beneficiary_id } });
+    this.rerouted.set(tr.id, owner);
+    audit({ kind: "routed_via_platform", what: "payout", owner, charge: charge.id, transfer: tr.id });
+    return { ...tr, routed_via_platform: true, charge_id: charge.id } as T;
   }
 
   /** Card issuing on the live Airwallex account for an emulated connected account (see header). */

@@ -50,7 +50,7 @@ export function beneficiaryFor(c: Contractor) {
     c.country === "DE"
       ? { account_currency: "EUR", account_name: c.name, iban: "DE89370400440532013000", swift_code: "COBADEFFXXX", bank_country_code: "DE" }
       : c.country === "GB"
-        ? { account_currency: "GBP", account_name: c.name, account_number: "31926819", account_routing_type1: "sort_code", account_routing_value1: "601613", bank_name: "NatWest", bank_country_code: "GB" }
+        ? { account_currency: "GBP", account_name: c.name, account_number: "12345678", account_routing_type1: "sort_code", account_routing_value1: "200415", bank_name: "NatWest", bank_country_code: "GB" }
         : { account_currency: "USD", account_name: c.name, account_number: "000777123456", account_routing_type1: "aba", account_routing_value1: "021000021", bank_country_code: "US", bank_account_category: "Checking", local_clearing_system: "ACH" };
   const [first, ...rest] = c.name.split(" ");
   return { transfer_methods: [c.method], beneficiary: { entity_type: "PERSONAL", first_name: first, last_name: rest.join(" "), address, bank_details: bank } };
