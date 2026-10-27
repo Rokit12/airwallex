@@ -96,6 +96,9 @@ export class AirwallexClient {
     const hasRequestId = typeof (opts.body as any)?.request_id === "string";
     const retryable = method === "GET" || hasRequestId;
 
+    // Set when an attempt's outcome is unknown (network error or 5xx). If the retry is then
+    // told the request_id was already used, the first attempt went through: read it back.
+    let uncertain = false;
     for (let attempt = 1; ; attempt++) {
       await this.throttle();
       const headers: Record<string, string> = {
@@ -115,6 +118,7 @@ export class AirwallexClient {
       } catch (err) {
         // Network failure: outcome unknown. Only safe to retry with a stable request_id.
         if (retryable && attempt < 3) {
+          uncertain = true;
           await sleep(500 * attempt);
           continue;
         }
@@ -131,8 +135,17 @@ export class AirwallexClient {
         continue;
       }
       if ((res.status === 429 || res.status >= 500) && retryable && attempt < 4) {
+        if (res.status >= 500) uncertain = true;
         await sleep(400 * 2 ** attempt + Math.random() * 200);
         continue;
+      }
+      if (uncertain && res.status === 400 && /duplicate_request/.test(data?.code ?? "")) {
+        const pi = path.match(/^\/pa\/payment_intents\/([^/]+)\/(confirm|capture|cancel|increment_authorization)$/);
+        if (pi) {
+          audit({ kind: "recover", path, note: "earlier attempt was processed; reading the payment intent back" });
+          return (await this.call<T>("GET", `/pa/payment_intents/${pi[1]}`, { onBehalfOf: opts.onBehalfOf }));
+        }
+        throw new AwxError(409, "outcome_unknown", `An earlier attempt of ${method} ${path} returned an error but was processed by Airwallex. Check the resource before acting again.`, data, path);
       }
       throw new AwxError(res.status, data?.code ?? "http_error", data?.message ?? text.slice(0, 200), data?.details ?? data, path);
     }

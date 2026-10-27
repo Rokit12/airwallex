@@ -26,7 +26,7 @@ Twelve finance agents for **Trailhead Outfitters LLC**, a US business, built on 
 | Requirement | Where |
 |---|---|
 | **Working demo** | `npm run console`, then open http://localhost:4310 and run any kit against your own sandbox ([Quick start](#quick-start)). Without credentials, open `preview/agent-console.html`, which replays recorded runs of all twelve kits. |
-| **Video under 5 minutes** | Recorded from the console; the timed script is in [docs/VIDEO_SCRIPT.md](docs/VIDEO_SCRIPT.md). |
+| **Video under 5 minutes** | A walkthrough of all twelve kits running in the console, linked in the submission. |
 | **Repository with setup instructions** | This README: [Quick start](#quick-start), [Kit setup and enablement](#kit-setup-and-enablement), [Troubleshooting](docs/TROUBLESHOOTING.md). |
 | **Uses Airwallex APIs** | Every kit calls the Airwallex sandbox REST API: authentication, balances, Global Accounts, simulated deposits, FX rates, quotes and conversions, beneficiaries, transfers and transfer simulations, card issuing (cardholders, cards, controls, transactions), payment intents (confirm, pre-authorization, increment, capture, cancel), disputes and dispute simulations, file uploads, connected accounts. Each run writes every call to an audit log in `runs/`. |
 
@@ -300,7 +300,7 @@ src/console/         web console server, kit runner, recorder, replay builder
 src/commerce/        test storefront, merchant MCP server, card credentials provider
 src/metal/           Metal: x402 sellers (live and local), emulator, live check
 ui/index.html        the console page
-docs/                architecture, troubleshooting, video script, screenshots
+docs/                architecture, troubleshooting, screenshots
 preview/             replay page built from recorded runs
 runs/                audit logs and run outputs (git-ignored)
 ```
@@ -321,7 +321,6 @@ runs/                audit logs and run outputs (git-ignored)
 
 - [Architecture](docs/ARCHITECTURE.md): layers, decision flow, core modules, console event protocol
 - [Troubleshooting](docs/TROUBLESHOOTING.md): login, access, Metal and run-time issues
-- [Video script](docs/VIDEO_SCRIPT.md): a timed walkthrough under five minutes
 - Each kit's README, linked in [the agents table](#the-agents)
 
 ## License

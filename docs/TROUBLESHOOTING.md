@@ -7,6 +7,7 @@ Start with `npm run check`. It logs in, lists global accounts and balances, and 
 | What you see | Cause | Fix |
 |---|---|---|
 | `401 credentials_invalid` | Client ID or API key is wrong (screenshots often confuse `I`/`l` and `O`/`0`) | Copy both values with the copy buttons in **Account → Developer → API keys** into `.env` |
+| Card payments fail with `authorization_failed` / `internal_error` ("Please try again later"), or `failed to process transaction` from the card simulator | Airwallex's sandbox card processing is temporarily down (it affects every account, not your setup). The client reads the payment back, so nothing is charged twice | Wait and re-run the kit. `RAILS=live npm run kit4` is a quick check of whether card payments are back |
 | `403 Forbidden` on login | The key has an IP allowlist, or the firewall is blocking repeated failed logins | Remove the IP allowlist from the key; wait a while after many failed attempts |
 | Calls fail with `forbidden` or missing permission | The scoped key lacks a resource | Give the key read and write access to balances, global accounts, FX, beneficiaries, transfers, issuing, payments, files and simulation |
 | Business stays **In review** | A business you added has a custom name | Name it exactly `New Business Sandbox` or `Sandbox Business`; those are approved automatically |

@@ -56,6 +56,7 @@ export const say = {
     console.log(`  ${c.yellow("!")} ${s}`);
   },
   fail(s: string) {
+    process.exitCode = 1; // a failed end-of-run check fails the run, so scripts and CI see it
     if (emit({ type: "fail", text: s })) return;
     console.log(`  ${c.red("✖")} ${s}`);
   },
