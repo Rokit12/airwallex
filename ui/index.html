@@ -133,6 +133,43 @@ td .bad { color: var(--bad); } td .good { color: var(--ok); }
 .finish { margin-top: 16px; border-radius: 10px; padding: 12px 14px; font-weight: 600; }
 .finish.ok { background: var(--ok-soft); color: var(--ok); } .finish.bad { background: var(--bad-soft); color: var(--bad); }
 .finish .err { font: 400 0.8rem var(--font-mono); color: var(--ink); margin-top: 6px; overflow-wrap: anywhere; }
+
+/* What runs live vs simulated, under the run title */
+.rails { padding: 10px 20px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 6px; background: var(--sunk); }
+.rails[hidden] { display: none; }
+.rails .row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: baseline; }
+.rails .k { font: 500 0.68rem/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; min-width: 86px; }
+.rails .k.live { color: var(--ok); } .rails .k.sim { color: var(--warn); } .rails .k.note { color: var(--muted); }
+.rails .v { font-size: 0.84rem; flex: 1 1 260px; min-width: 0; }
+.rails .why { color: var(--muted); }
+
+/* Outcome card at the end of a run */
+.outcome { margin-top: 18px; border: 2px solid var(--ok); border-radius: 12px; padding: 16px; display: grid; gap: 12px; background: var(--panel); }
+.outcome.bad { border-color: var(--bad); }
+.outcome .head { display: flex; gap: 10px; align-items: start; }
+.outcome .badge { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #fff; background: var(--ok); }
+.outcome.bad .badge { background: var(--bad); }
+.outcome .headline { font: 600 1.02rem/1.45 var(--font-display); overflow-wrap: anywhere; }
+.outcome .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.outcome .stat { background: var(--sunk); border-radius: 8px; padding: 8px 10px; }
+.outcome .stat b { display: block; font: 600 1.25rem/1.2 var(--font-mono); font-variant-numeric: tabular-nums; }
+.outcome .stat span { font-size: 0.76rem; color: var(--muted); }
+.outcome ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 0.86rem; }
+.outcome li { overflow-wrap: anywhere; }
+.outcome .err { font: 400 0.8rem var(--font-mono); overflow-wrap: anywhere; }
+
+/* Overview */
+.overview { padding: 18px 20px 24px; display: grid; gap: 16px; }
+.overview .lead { color: var(--muted); max-width: 70ch; }
+.overview .how { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 8px; }
+.overview .how div { background: var(--sunk); border-radius: 8px; padding: 10px 12px; font-size: 0.84rem; }
+.overview .how b { display: block; font: 500 0.68rem/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; text-align: left; background: var(--panel); color: inherit; cursor: pointer; }
+.card:hover { border-color: var(--accent); }
+.card .name { font-weight: 600; line-height: 1.3; }
+.card .dec { font-size: 0.84rem; color: var(--muted); }
+.btn.ghost { background: transparent; }
 </style>
 
 <div class="shell">
@@ -141,7 +178,7 @@ td .bad { color: var(--bad); } td .good { color: var(--ok); }
       <h1>Agent Console</h1>
       <span class="eyebrow" id="biz">Trailhead Outfitters LLC · United States of America · USD</span>
     </div>
-    <div class="chips" id="modechips"><span class="pill idle">Connecting…</span></div>
+    <div class="chips"><button class="btn ghost" id="home" type="button">All kits</button><span class="chips" id="modechips"><span class="pill idle">Connecting…</span></span></div>
   </header>
 
   <div class="grid">
@@ -158,6 +195,7 @@ td .bad { color: var(--bad); } td .good { color: var(--ok); }
         </div>
         <div class="controls" id="runControls"></div>
       </div>
+      <div class="rails" id="rails" hidden></div>
       <div class="timeline" id="timeline">
         <div class="empty">Each run shows the agent's goal, its plan, the new information it gets, how its decision changes, and what it did with the money. Approvals stop the run until a person answers.</div>
       </div>
@@ -178,9 +216,40 @@ const KIT_FALLBACK = [
   { id: "08", name: "Marketplace Settlement Agent", track: "Multi-Tenant Platforms", summary: "Set seller reserves, pay net proceeds, and re-reserve when risk changes." },
   { id: "09", name: "Approval-Bound Shopping Agent", track: "Agentic Commerce", summary: "Shop a merchant site in a browser and pay only for the exact approved terms." },
   { id: "10", name: "Merchant-Enabled Agentic Checkout", track: "Agentic Commerce", summary: "Sell through Claude with merchant MCP tools and a hosted payment page." },
-  { id: "11", name: "x402 Business Agents", track: "Agent Payments", summary: "Run three agents from one Metal account; move their limits when a supplier's price rises." },
+  { id: "11", name: "x402 Business Agents", track: "Agent Payments", summary: "Three agents share 20 *USDZ; move their limits when a supplier's price rises, and resolve a disputed batch." },
   { id: "12", name: "Inference Sourcing Agent", track: "Inference Sourcing", summary: "Buy every AI step at the live price; reroute and ration the float when budgets or speed change." },
 ];
+
+/* What each agent decides, and what runs live or simulated (and why). */
+const DECIDES = {
+  "01": "What to fund, convert, defer or escalate when cash is short, and how much FX it may book without a person.",
+  "02": "Monthly or annual SaaS terms from a cash forecast, enforced with virtual-card controls.",
+  "03": "Wait, trace, replace or escalate a missing supplier payment, without paying twice.",
+  "04": "Accept, challenge or escalate each chargeback on evidence and cost.",
+  "05": "Which late customer gets scarce bridge capital so their card payment clears.",
+  "06": "Pay each employer's contractors from that employer's money only.",
+  "07": "Collect revenue-based repayments and size a new advance above the reserve floor.",
+  "08": "Seller reserves, net payouts, re-reserving on new risk, recovering refund shortfalls.",
+  "09": "Buy only what the shopper approved; ask again on any change; never pay twice.",
+  "10": "Sell through an AI assistant with the merchant's MCP tools and a hosted payment page.",
+  "11": "Three agents share 20 *USDZ: whose limits move when a supplier's price rises, and which disputed charges to refund.",
+  "12": "Which provider each AI step is bought from, and how card holds and a short float stretch when a job overruns.",
+};
+const RAILS = {
+  "01": { live: "Airwallex: balances, FX quotes and conversions, beneficiaries, SWIFT and US payouts, deposits" },
+  "02": { live: "Airwallex: virtual cards with spend controls, card authorizations and declines" },
+  "03": { live: "Airwallex: transfers, bank return simulation, duplicate request protection" },
+  "04": { live: "Airwallex: card payments, disputes, evidence uploads, issuer rejection" },
+  "05": { live: "Airwallex: connected accounts, platform transfers and charges, customer cards" },
+  "06": { live: "Airwallex: three employer connected accounts, funding, a platform advance, FX and payouts", note: "FX and payouts for each employer are routed through the platform account (the employer's own balance is charged), because Airwallex has not configured fees inside connected accounts yet." },
+  "07": { live: "Airwallex: borrower connected accounts, revenue deposits, repayment charges, the advance", note: "A borrower's own supplier payment is routed through the platform account (charged to that borrower first), because Airwallex has not configured fees inside connected accounts yet." },
+  "08": { live: "Airwallex: seller connected accounts, sales, reserves, net payouts, refund recovery" },
+  "09": { live: "Airwallex: card payment intents; a real browser checks out on the test store", sim: "Card credentials come from the sandbox test card", why: "waiting on Airwallex's Airi CLI access" },
+  "10": { live: "Airwallex: card payment intents, declines and retries on the same checkout", sim: "Merchant MCP tools and the 120-product catalogue run locally", why: "waiting on Airwallex merchant-side access" },
+  "11": { live: "Airwallex: deposit credited by Metal transaction, FX to EUR, SWIFT licence fee · Metal testnet x402 payments (npm run metal:check)", sim: "Metal mandates (spending limits) and on-chain refusals", why: "binding a mandate reverts on Metal testnet" },
+  "12": { live: "Airwallex: card pre-authorization holds, increments, single captures, cancels", sim: "Metal clearing (deposits, epochs, withdrawals)", why: "binding a mandate reverts on Metal testnet; live clearing adapter not wired" },
+};
+const partlySimulated = (id) => Boolean(RAILS[id]?.sim);
 
 const state = { kits: [], selected: null, status: {}, runs: {}, live: !REPLAY, emulated: {}, timers: [] };
 const $ = (id) => document.getElementById(id);
@@ -220,7 +289,7 @@ function termsList(t) {
 }
 
 /* ── Rendering one event ────────────────────────────────── */
-function render(ev, { interactive }) {
+function render(ev, { interactive, evs = [] }) {
   const el = document.createElement("div");
   el.className = "ev";
   switch (ev.type) {
@@ -238,7 +307,7 @@ function render(ev, { interactive }) {
       const ic = { step: "·", ok: "✔", warn: "!", fail: "✖" }[ev.type];
       el.className = `ev line ${ev.type}`;
       el.innerHTML = `<span class="ic">${ic}</span><span class="tx">${esc(ev.text)}</span>`;
-      if (/card emulator|platform emulator|metal emulator/i.test(ev.text)) markEmulated(/metal emulator/i.test(ev.text) ? "Metal rail emulated" : /platform emulator/i.test(ev.text) ? "Platform rail emulated" : "Card rail emulated");
+      if (/card emulator|platform emulator|metal emulator/i.test(ev.text)) markEmulated(/metal emulator/i.test(ev.text) ? (RAILS[state.selected]?.sim ? "" : "Metal side simulated") : /platform emulator/i.test(ev.text) ? "Platform payments simulated" : "Card authorizations simulated");
       break;
     }
     case "decision":
@@ -278,10 +347,8 @@ function render(ev, { interactive }) {
     case "run_started":
       return null;
     case "run_finished":
-      el.className = `ev finish ${ev.code ? "bad" : "ok"}`;
-      el.innerHTML = ev.code ? `Run stopped with an error<div class="err">${esc(ev.error || "")}</div>` : "Run finished";
       setStatus(state.selected, ev.code ? "failed" : REPLAY ? "recorded" : "done");
-      break;
+      return outcomeCard(ev, evs);
     case "raw":
       el.className = "ev raw";
       el.textContent = ev.text;
@@ -292,9 +359,52 @@ function render(ev, { interactive }) {
   return el;
 }
 
+function renderRails(id) {
+  const r = RAILS[id];
+  const box = $("rails");
+  if (!id || !r) { box.hidden = true; return; }
+  const extra = state.emulated[id] && typeof state.emulated[id] === "string" ? state.emulated[id] : "";
+  box.hidden = false;
+  box.innerHTML = `<div class="row"><span class="k live">Live</span><span class="v">${esc(r.live)}</span></div>`
+    + (r.sim ? `<div class="row"><span class="k sim">Simulated</span><span class="v">${esc(r.sim)} <span class="why">— ${esc(r.why)}</span></span></div>` : "")
+    + (r.note ? `<div class="row"><span class="k note">Note</span><span class="v why">${esc(r.note)}</span></div>` : "")
+    + (extra ? `<div class="row"><span class="k sim">This run</span><span class="v">${esc(extra)} <span class="why">— Airwallex refused the live call, so this part ran on the emulator</span></span></div>` : "");
+}
+
+/* One card at the end of a run: the final check, the main results, and the counts. */
+function outcomeCard(ev, evs) {
+  const el = document.createElement("div");
+  const upto = evs.indexOf(ev) >= 0 ? evs.slice(0, evs.indexOf(ev)) : evs;
+  const checks = upto.filter((e) => e.type === "ok" || e.type === "fail");
+  const final = checks[checks.length - 1];
+  const failed = Boolean(ev.code) || final?.type === "fail";
+  const beatIdx = upto.map((e, i) => (e.type === "beat" ? i : -1)).filter((i) => i >= 0);
+  const from = beatIdx.length >= 2 ? beatIdx[beatIdx.length - 2] : (beatIdx[0] ?? 0);
+  const results = upto.slice(from + 1).filter((e) => e.type === "ok" && e !== final).map((e) => e.text).slice(-4);
+  const cap = (t) => (t ? t.charAt(0).toUpperCase() + t.slice(1) : t);
+  const decisions = upto.filter((e) => e.type === "decision").length;
+  const replans = upto.filter((e) => e.type === "beat" && /NEW INFORMATION/i.test(e.label)).length;
+  const asked = upto.filter((e) => e.type === "approval_request").length;
+  const approved = upto.filter((e) => e.type === "approval_result" && e.approved).length;
+  el.className = `ev outcome${failed ? " bad" : ""}`;
+  el.innerHTML = `<div class="eyebrow">${failed ? "Run stopped" : "Outcome"}</div>
+    <div class="head"><span class="badge" aria-hidden="true">${failed ? "!" : "✓"}</span><div class="headline">${esc(ev.code ? "The run stopped with an error." : cap(final?.text) || "Run finished.")}</div></div>
+    ${ev.code && ev.error ? `<div class="err">${esc(ev.error)}</div>` : ""}
+    ${results.length ? `<ul>${results.map((t) => `<li>${esc(cap(t))}</li>`).join("")}</ul>` : ""}
+    <div class="stats">
+      <div class="stat"><b>${decisions}</b><span>decisions made in code</span></div>
+      <div class="stat"><b>${replans}</b><span>times new information changed the plan</span></div>
+      <div class="stat"><b>${approved}/${asked}</b><span>approvals given by a person</span></div>
+      <div class="stat"><b>${partlySimulated(state.selected) || state.emulated[state.selected] ? "Partly" : "Fully"}</b><span>live on the sandbox (see the strip above)</span></div>
+    </div>`;
+  return el;
+}
+
 function markEmulated(label) {
-  state.emulated[state.selected] = label || state.emulated[state.selected] || "Card rail emulated";
+  if (!label) return; // already shown in the kit's rails strip
+  state.emulated[state.selected] = label;
   renderHeadChips();
+  renderRails(state.selected);
 }
 
 /* ── Kit rail and header ─────────────────────────────────── */
@@ -319,7 +429,9 @@ function renderKits() {
 function renderHeadChips() {
   const chips = [];
   chips.push(REPLAY ? `<span class="pill idle">Replay of recorded sandbox runs</span>` : `<span class="pill ok">Airwallex sandbox</span>`);
-  if (state.selected && state.emulated[state.selected]) chips.push(`<span class="pill warn">${typeof state.emulated[state.selected] === "string" ? state.emulated[state.selected] : [5, 6, 7, 8].includes(Number(state.selected)) ? "Platform rail emulated" : [11, 12].includes(Number(state.selected)) ? "Metal rail emulated" : "Card rail emulated"}</span>`);
+  const id = state.selected;
+  if (id && (partlySimulated(id) || state.emulated[id])) chips.push(`<span class="pill warn">Partly simulated</span>`);
+  else if (id) chips.push(`<span class="pill ok">Fully live</span>`);
   $("modechips").innerHTML = chips.join("");
 }
 
@@ -327,13 +439,46 @@ function select(id) {
   state.selected = id;
   state.timers.forEach(clearTimeout);
   state.timers = [];
+  if (!id) return showOverview();
+  if (!REPLAY) history.replaceState(null, "", `#kit${id}`);
   const k = state.kits.find((x) => x.id === id);
   $("runTrack").textContent = `Kit ${k.id} · ${k.track}`;
   $("runName").textContent = k.name;
   $("runSub").textContent = k.summary;
   renderKits();
+  renderHeadChips();
+  renderRails(id);
   if (REPLAY) showReplay(id, false);
   else showLive(id);
+}
+
+/* ── Overview: what each agent decides, before picking one ─ */
+function showOverview() {
+  state.selected = null;
+  renderKits();
+  renderHeadChips();
+  renderRails(null);
+  $("runTrack").textContent = "Twelve agents · one per starter kit";
+  $("runName").textContent = "Airwallex Agent Desk";
+  $("runSub").textContent = "Trailhead Outfitters LLC · United States of America · USD";
+  $("runControls").innerHTML = "";
+  $("timeline").innerHTML = `<div class="overview">
+    <p class="lead">Each agent makes one financial decision, gets new information partway through, and changes its plan. Code owns the money rules, a person approves the exact terms, and every call and decision goes to an audit log.</p>
+    <div class="how">
+      <div><b>Goal</b>What the business needs</div>
+      <div><b>Plan</b>The agent's first decision</div>
+      <div><b>New information</b>Something changes</div>
+      <div><b>Revised decision</b>Only what that change affects</div>
+      <div><b>Outcome</b>Money moved, or a person asked</div>
+    </div>
+    <div class="cards">${state.kits.map((k) => `<button class="card" type="button" data-open="${k.id}">
+      <span class="eyebrow">Kit ${k.id} · ${esc(k.track)}</span>
+      <span class="name">${esc(k.name)}</span>
+      <span class="dec">${esc(DECIDES[k.id] || k.summary)}</span>
+      <span class="row"><span class="pill ${partlySimulated(k.id) ? "warn" : "ok"}">${partlySimulated(k.id) ? "Partly simulated" : "Fully live"}</span></span>
+    </button>`).join("")}</div>
+  </div>`;
+  for (const b of document.querySelectorAll("[data-open]")) b.onclick = () => select(b.dataset.open);
 }
 
 /* ── Replay mode ────────────────────────────────────────── */
@@ -348,9 +493,10 @@ function showReplay(id, animate) {
   }
   $("play").onclick = () => showReplay(id, true);
   state.emulated[id] = false;
+  renderRails(id);
   const evs = rec.events;
   if (!animate) {
-    for (const ev of evs) { const el = render(ev, { interactive: false }); if (el) tl.appendChild(el); }
+    for (const ev of evs) { const el = render(ev, { interactive: false, evs }); if (el) tl.appendChild(el); }
     renderHeadChips();
     return;
   }
@@ -360,7 +506,7 @@ function showReplay(id, animate) {
     const gap = i ? Math.min(900, Math.max(120, (ev.t - evs[i - 1].t) * 0.6)) : 0;
     delay += ev.type === "beat" ? Math.max(gap, 500) : gap;
     state.timers.push(setTimeout(() => {
-      const el = render(ev, { interactive: false });
+      const el = render(ev, { interactive: false, evs });
       if (el) { tl.appendChild(el); el.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); }
       if (i === evs.length - 1 && state.status[id] === "running") setStatus(id, "recorded");
     }, delay));
@@ -372,7 +518,7 @@ function showLive(id) {
   const tl = $("timeline");
   const evs = state.runs[id] || [];
   tl.innerHTML = evs.length ? "" : `<div class="empty">Ready to run against the Airwallex sandbox. Money moves in the sandbox only.</div>`;
-  for (const ev of evs) { const el = render(ev, { interactive: isPending(ev, evs) }); if (el) tl.appendChild(el); }
+  for (const ev of evs) { const el = render(ev, { interactive: isPending(ev, evs), evs }); if (el) tl.appendChild(el); }
   const busy = Object.values(state.status).some((s) => s === "running" || s === "approval");
   $("runControls").innerHTML = `<button class="btn primary" id="go" ${busy ? "disabled" : ""}>${evs.length ? "Run again" : "Run agent"}</button>`;
   $("go").onclick = () => run(id);
@@ -383,6 +529,7 @@ function isPending(ev, evs) {
 async function run(id) {
   state.runs[id] = [];
   state.emulated[id] = false;
+  renderRails(id);
   setStatus(id, "running");
   showLive(id);
   $("go").disabled = true;
@@ -411,7 +558,7 @@ function connect() {
     if (list.some((e) => e.seq === ev.seq && e.type === ev.type)) return;
     list.push(ev);
     if (state.selected === kit) {
-      const el = render(ev, { interactive: ev.type === "approval_request" });
+      const el = render(ev, { interactive: ev.type === "approval_request", evs: list });
       if (el) { $("timeline").querySelector(".empty")?.remove(); $("timeline").appendChild(el); el.scrollIntoView({ block: "nearest" }); }
       if (ev.type === "run_finished") showLive(kit);
     } else if (ev.type === "run_finished") setStatus(kit, ev.code ? "failed" : "done");
@@ -424,7 +571,8 @@ function connect() {
     state.kits = KIT_FALLBACK;
     renderKits();
     renderHeadChips();
-    select(location.hash.replace("#kit", "") || "01");
+    select(location.hash.replace("#kit", "") || null);
+    $("home").onclick = () => { history.replaceState(null, "", location.pathname); select(null); };
     return;
   }
   try {
@@ -436,6 +584,7 @@ function connect() {
   renderKits();
   renderHeadChips();
   connect();
-  select("01");
+  $("home").onclick = () => { history.replaceState(null, "", location.pathname); select(null); };
+  select(location.hash.replace("#kit", "") || null);
 })();
 </script>
