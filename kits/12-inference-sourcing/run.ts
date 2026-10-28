@@ -1,7 +1,7 @@
 /**
  * Kit 12 — Inference Sourcing Agent
  *
- * An AI service writes research reports. Every step (model chunks, searches,
+ * An AI service writes research reports. Every step (model paragraphs, searches,
  * data lookups) is bought from x402 providers by clearing on Metal: one deposit
  * per job, each payment signs the job key's running total. Customers pay by card
  * through Airwallex: a pre-authorized hold for their budget, captured at what the
@@ -43,7 +43,7 @@ interface Job extends JobSpec {
 
 try {
   say.title("Kit 12 · Inference Sourcing Agent — buy every AI step at the live price, within each customer's hold");
-  say.beat("goal", "Finish three research jobs inside their card holds, paying providers per chunk by clearing, with a float smaller than the three budgets.");
+  say.beat("goal", "Finish three research jobs inside their card holds, paying providers per paragraph, search and lookup by clearing, with a 1.50 *USDZ float smaller than the 2.50 the holds could spend.");
 
   // ── Providers ────────────────────────────────────────────────────────────
   say.beat("setup", "Start the x402 providers, hold each customer's card, deposit into clearing per job.");
@@ -54,22 +54,22 @@ try {
   let missingFilingsFor: string | null = null;
   for (const p of PROVIDERS) {
     const s = await startSeller(p.name, {
-      "/chunk": {
+      "/unit": {
         scheme: "clearing",
         price: () => live[p.id]!.price,
         payTo: live[p.id]!.payTo,
-        description: `${p.kind} chunk`,
+        description: `one ${p.kind === "model" ? "paragraph" : p.kind === "search" ? "search" : "lookup"}`,
         latencyMs: () => live[p.id]!.latency,
         handle: (_req, url) => {
           if (p.kind === "data" && url.searchParams.get("job") === missingFilingsFor) return { found: false };
-          return { found: true, text: p.kind === "model" ? "…stand-in text for one 1k-token chunk…" : p.kind === "search" ? "3 results" : "1 filing" };
+          return { found: true, text: p.kind === "model" ? "…stand-in text for one paragraph…" : p.kind === "search" ? "3 results" : "1 filing" };
         },
       },
     }, facilitator);
     sellers.push(s);
-    (live[p.id] as any).url = `${s.url}/chunk`;
+    (live[p.id] as any).url = `${s.url}/unit`;
   }
-  say.table(PROVIDERS.map((p) => ({ provider: p.id, kind: p.kind, tier: p.tier, "price/chunk": fmtMicros(p.priceMicros), clearing: "yes" })));
+  say.table(PROVIDERS.map((p) => ({ provider: p.id, kind: p.kind, tier: p.tier, "price per unit": fmtMicros(p.priceMicros), clearing: "yes" })));
 
   // ── Holds and deposits ───────────────────────────────────────────────────
   const operator = newAddress();
@@ -114,7 +114,7 @@ try {
     const r = route(step, views(), available);
     const tag = `${j.id}:${s.id}`;
     if (routed.get(tag) !== r.provider) {
-      say.decision(`job ${j.id} ${s.id}`, r.provider ?? "NO ROUTE", `${step.chunks} chunk(s), ${fmtMicros(r.costMicros)} at the latest offer: ${r.reason}.`);
+      say.decision(`job ${j.id} ${s.id}`, r.provider ?? "NO ROUTE", `${step.chunks} ${step.kind === "model" ? "paragraph" : step.kind === "search" ? "search" : "lookup"}(s), ${fmtMicros(r.costMicros)} at the latest offer: ${r.reason}.`);
       routed.set(tag, r.provider ?? "");
     }
     if (!r.provider) return "blocked";
@@ -131,7 +131,7 @@ try {
           }
         }
         if (live[r.provider]!.observed > s.slaMs && n < limit - 1) {
-          say.warn(`${r.provider} took ${live[r.provider]!.observed} ms for one chunk (SLA ${s.slaMs} ms): re-routing the rest of job ${j.id} ${s.id}`);
+          say.warn(`${r.provider} took ${live[r.provider]!.observed} ms for one paragraph (SLA ${s.slaMs} ms): re-routing the rest of job ${j.id} ${s.id}`);
           return "ok";
         }
       } catch (err) {
@@ -147,7 +147,7 @@ try {
     return j.stepIndex >= j.steps.length ? "done" : "ok";
   }
 
-  say.beat("run", "Three jobs run at once; every chunk is paid by clearing at the price in that request's 402 offer.");
+  say.beat("run", "Three jobs run at once; every paragraph, search and lookup is paid by clearing at the price in that request's 402 offer.");
   missingFilingsFor = MISSING_FILINGS.job;
   // Phase 1: planning, search and lookups for every job.
   for (let round = 0; round < 40; round++) {
@@ -171,7 +171,7 @@ try {
   const bDraft = B.steps.find((s) => s.id === OVERRUN.step)!;
   bDraft.chunks *= OVERRUN.factor;
   live["cobalt-mini"]!.latency = SLOW_LATENCY_MS;
-  say.step(`job ${B.id} draft: ${bDraft.chunks / OVERRUN.factor} → ${bDraft.chunks} chunks · cobalt-mini now answers in ~${SLOW_LATENCY_MS} ms`);
+  say.step(`job ${B.id} draft: ${bDraft.chunks / OVERRUN.factor} → ${bDraft.chunks} paragraphs · cobalt-mini now answers in ~${SLOW_LATENCY_MS} ms`);
   // The first slow chunk is how the agent finds out: it measures every answer.
   await advance(B, 2);
 

@@ -16,6 +16,17 @@ A merchant sells through Claude. Its 120-product catalogue and checkout are expo
 
 Test storefront MCP server and hosted payment page. Payments are live Airwallex payment intents, confirmed with documented test cards (a declined card comes back as Airwallex's own `issuer_declined`). On an account without native API access for payments, card confirmation falls back to the card emulator. Airwallex's own merchant MCP endpoint replaces the store's once merchant-side Agentic Commerce is enabled.
 
+## Shop from Claude yourself
+
+The guide asks for the merchant's MCP endpoint to be configured in Claude locally. Start the storefront and add its endpoint:
+
+```sh
+npm run store                # storefront on :4320, MCP endpoint at /mcp
+claude mcp add-json trailhead-store '{"type":"http","url":"http://localhost:4320/mcp"}'
+```
+
+Then ask Claude to find and buy a product. It searches the catalogue with `search_products` (it doesn't crawl the site), confirms the terms with you, and gives you the hosted payment link for your card. Use `4035501000000008` to pay, or the declined test card to see the exception. When Airwallex grants merchant-side Agentic Commerce access, upload the catalogue in the format Airwallex provides and point Claude at Airwallex's merchant-specific MCP endpoint instead.
+
 ## Run it
 
 ```sh

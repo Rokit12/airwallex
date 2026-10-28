@@ -148,8 +148,24 @@ export async function onboardAndFund(awx: AirwallexClient, c: CustomerSpec, depo
       await sleep(2500);
     }
   }
-  if (deposit > 0) await awx.post("/simulation/deposit/create", { global_account_id: ga.id, amount: deposit, payer_name: payer }, ob);
+  if (deposit > 0) await depositAndWait(awx, acct.id, ga.id, deposit, payer);
   return { ...acct, globalAccountId: ga.id as string };
+}
+
+/**
+ * Simulate a deposit into a customer's Global Account and wait until the balance shows it.
+ * In a just-opened connected account the credit can take a while to post, and deciding
+ * on the old balance would hold or refuse payments that are actually funded.
+ */
+export async function depositAndWait(awx: AirwallexClient, acct: string, globalAccountId: string, amount: number, payer: string, currency = "USD"): Promise<number> {
+  const before = await balanceOf(awx, acct, currency);
+  await awx.post("/simulation/deposit/create", { global_account_id: globalAccountId, amount, payer_name: payer }, { onBehalfOf: acct });
+  for (let i = 0; i < 40; i++) {
+    const now = await balanceOf(awx, acct, currency);
+    if (now >= before + amount - 0.005) return now;
+    await sleep(i < 10 ? 1500 : 3000);
+  }
+  throw new Error(`Deposit of ${currency} ${amount} into ${acct} has not posted after ~100 s. The sandbox may be slow; re-run the kit.`);
 }
 
 export async function balanceOf(awx: AirwallexClient, acct: string | undefined, currency = "USD"): Promise<number> {

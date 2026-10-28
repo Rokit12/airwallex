@@ -2,23 +2,23 @@
 
 **Track:** Inference Sourcing
 
-An AI service writes research reports. Every step (model output in 1k-token chunks, web searches, filing lookups) is bought from x402 providers that accept Metal clearing: each job deposits once and signs its running total with every chunk, so providers can charge fractions of a cent. Customers pay by card through Airwallex: a pre-authorized hold for their budget, captured at what the job actually spent.
+An AI service writes research reports. Every step (model paragraphs, web searches, filing lookups) is bought from x402 providers that accept Metal clearing: each job deposits once and signs its running total with every purchase. Model providers charge 1, 2 and 5 cents a paragraph, a web search costs 2 cents and a data lookup 3. Customers pay by card through Airwallex: a pre-authorized hold for their budget, captured at what the job actually spent.
 
 | Job | Customer | Card hold |
 |---|---|---|
-| A · EV battery supply-chain brief | Northwind Retail | USD 1.50 |
-| B · Competitor pricing scan | Calder Precision Ltd | USD 1.20 |
-| C · Regulatory filings brief | Brightline Creative | USD 1.00 |
+| A · EV battery supply-chain brief | Northwind Retail | USD 1.00 |
+| B · Competitor pricing scan | Calder Precision Ltd | USD 0.75 |
+| C · Regulatory filings brief | Brightline Creative | USD 0.75 |
 
-The operator's USDZ float is 3.00, less than the three holds combined.
+The operator's float is 1.50 *USDZ, less than the 2.50 the three jobs could spend.
 
 ## What happens
 
 1. **Hold and deposit.** Each customer's card is held for the budget (`authorization_type: pre_auth`, `auto_capture: false`). Each job's key gets a clearing deposit from the float; deposits count only from the next epoch.
-2. **Route.** Each step goes to the cheapest provider that meets a 1.5 s latency SLA, at the price in that request's own `402` offer, never a cached one. A step the agent judges worth it (the customer-facing draft) goes to the premium model when the job can still afford to finish the rest.
+2. **Route.** Each step goes to the cheapest provider that meets a 1.5 s latency target, at the price in that request's own `402` offer, never a cached one. A step the agent judges worth it (the customer-facing draft) goes to the premium model when the job can still afford to finish the rest.
 3. **New information.**
    - Job C's filings cannot be found: after three empty lookups the job stops, and its unspent deposit is queued for withdrawal, claimable only after the epoch closes.
-   - Job B's prompt needs four times its budgeted tokens, and the budget model slows to 2.5 s a chunk. The agent measures the slow answer and reroutes to the standard model.
+   - Job B's prompt runs to four times the tokens budgeted (9 → 36 paragraphs), and the cheapest model slows to 2.5 s a paragraph under the load. The agent measures the slow answer and reroutes to the standard model.
 4. **Re-plan job B.** The projection no longer fits the hold, so the agent raises the hold first. The customer approves the new amount, and the agent calls `increment_authorization`. Only then does it top up the deposit. The float is rationed above its floor: B gets what is free now and the rest waits for C's withdrawal, so B pauses for one epoch, then finishes.
 5. **Settle.** Each job's clearing position (one total per key) decides its single capture, never above the hold. Job C's hold is cancelled, so its customer pays nothing and the business absorbs the lookups. Unused deposits are withdrawn after their epoch closes, and the operator pays each provider what it earned.
 

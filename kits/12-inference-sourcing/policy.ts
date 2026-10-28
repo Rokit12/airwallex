@@ -28,7 +28,7 @@ export interface Step {
 
 export const DEFAULT_POLICY = {
   /** Float kept back in the operator's wallet; never deposited. */
-  floatFloorMicros: 300_000,
+  floatFloorMicros: 50_000,
   /** A raised hold covers the new projection plus this margin. */
   holdMargin: 0.1,
 };

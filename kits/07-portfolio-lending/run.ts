@@ -14,7 +14,7 @@
 import { newRequestId } from "../../src/core/client.ts";
 import { PlatformClient } from "../../src/core/platform-client.ts";
 import { Sandbox } from "../../src/core/sandbox.ts";
-import { onboardAndFund, transferToCustomer, chargeCustomer, waitSettled, balanceOf } from "../../src/core/platform.ts";
+import { onboardAndFund, transferToCustomer, chargeCustomer, waitSettled, balanceOf, depositAndWait } from "../../src/core/platform.ts";
 import { say, usd } from "../../src/core/narrate.ts";
 import { explain } from "../../src/core/llm.ts";
 import { requestApproval, assertApproved, type Terms } from "../../src/core/approval.ts";
@@ -49,7 +49,7 @@ say.decision("Meadow advance (forecast)", `${plan1.action} ${usd(plan1.now)}`, p
 say.beat("new information", "This week's revenue lands in borrower wallets (sandbox deposits).");
 for (const b of lenders) {
   const a = accts[b.key]!;
-  await awx.post("/simulation/deposit/create", { global_account_id: a.ga, amount: b.actualRevenue, payer_name: "Card settlements" }, { onBehalfOf: a.id });
+  await depositAndWait(awx, a.id, a.ga, b.actualRevenue, "Card settlements");
   if (b.ownSpending > 0) {
     // The borrower pays its own supplier before collection day.
     const ben = await awx.post("/beneficiaries/create", { request_id: newRequestId(), transfer_methods: ["LOCAL"], beneficiary: { entity_type: "COMPANY", company_name: "Coastline Parts Inc", address: { street_address: "3 Gear St", city: "San Diego", state: "CA", postcode: "92102", country_code: "US" }, bank_details: { account_currency: "USD", account_name: "Coastline Parts Inc", account_number: "000444333222", account_routing_type1: "aba", account_routing_value1: "121000248", bank_country_code: "US", bank_account_category: "Checking", local_clearing_system: "ACH" } } }, { onBehalfOf: a.id });

@@ -12,7 +12,7 @@
 import { newRequestId } from "../../src/core/client.ts";
 import { PlatformClient } from "../../src/core/platform-client.ts";
 import { Sandbox } from "../../src/core/sandbox.ts";
-import { onboardAndFund, transferToCustomer, chargeCustomer, waitSettled, balanceOf } from "../../src/core/platform.ts";
+import { onboardAndFund, transferToCustomer, chargeCustomer, waitSettled, balanceOf, depositAndWait } from "../../src/core/platform.ts";
 import { say, usd } from "../../src/core/narrate.ts";
 import { explain } from "../../src/core/llm.ts";
 import { requestApproval, assertApproved, type Terms } from "../../src/core/approval.ts";
@@ -92,7 +92,7 @@ for (const l of bp.pay) await payLine(beacon, l);
 say.beat("new information", "Cobalt Games' payroll deposit lands mid-run.");
 const cobalt = EMPLOYERS[2]!;
 const cga = (await awx.get("/global_accounts", { onBehalfOf: accts.COBALT! })).items[0];
-await awx.post("/simulation/deposit/create", { global_account_id: cga.id, amount: cobalt.midRunDeposit, payer_name: "Cobalt Games payroll" }, { onBehalfOf: accts.COBALT! });
+await depositAndWait(awx, accts.COBALT!, cga.id, cobalt.midRunDeposit!, "Cobalt Games payroll");
 say.step(`Cobalt wallet ${usd(await balanceOf(awx, accts.COBALT))} · Beacon wallet still ${usd(await balanceOf(awx, accts.BEACON))} (deposits land in one tenant only)`);
 
 if (bp.action === "PAY_PARTIAL_AND_REQUEST_ADVANCE") {
@@ -119,5 +119,6 @@ say.beat("result", awx.mode === "emulated" ? "Per-employer state (platform rail 
 const rows = [];
 for (const e of EMPLOYERS) rows.push({ employer: e.spec.name, paid: paid[e.key]!.join(", "), held: e.contractors.filter((c) => !paid[e.key]!.includes(c.name)).map((c) => c.name).join(", ") || "none", wallet_usd: await balanceOf(awx, accts[e.key]) });
 say.table(rows);
-say.ok(`${Object.values(paid).flat().length}/${EMPLOYERS.flatMap((e) => e.contractors).length} contractors paid · no employer's funds used for another`);
+const paidCount = Object.values(paid).flat().length, total = EMPLOYERS.flatMap((e) => e.contractors).length;
+say[paidCount === total ? "ok" : "fail"](`${paidCount}/${total} contractors paid · no employer's funds used for another`);
 say.step(`audit log: ${auditPath}`);

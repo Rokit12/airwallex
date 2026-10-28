@@ -1,54 +1,83 @@
-/** Synthetic data for kit 11: Trailhead sells a trail-conditions API to other agents per call. */
+/**
+ * Synthetic data for kit 11, following the guide: customers' agents buy market data
+ * per query; a sourcing agent buys the upstream data, a support agent refunds
+ * customers, and a treasury agent moves earnings to Airwallex and pays a monthly
+ * licence fee invoiced in euros. The three agents may spend 20 *USDZ between them.
+ */
 import type { AgentLimits } from "./policy.ts";
 
 export const API = {
-  name: "Trailhead Trail Conditions API",
-  path: "/conditions",
-  priceCents: 10, // what buyer agents pay per call
+  name: "Trailhead Market Data API",
+  path: "/quote",
+  priceCents: 5, // a query sells for 5 cents
 };
 
 export const UPSTREAM = {
-  name: "Summit Weather Data",
-  path: "/forecast",
-  priceCents: 4,
-  raisedPriceCents: 7,
-  notice: `From: billing@summit-weather.example
-Subject: Price change for the /forecast endpoint
+  name: "Summit Market Feed",
+  path: "/feed",
+  priceCents: 2, // its data costs 2 cents
+  raisedPriceCents: 4, // then rises to 4 cents, above the sourcing agent's 3-cent cap
+  notice: `From: billing@summit-feed.example
+Subject: Price change for /feed
 
-Hi Trailhead team, from today /forecast costs USDZ 0.07 per call (was 0.04), reflecting new satellite data costs.
+Hi Trailhead team, from today /feed costs USDZ 0.04 per request (was 0.02).
 The new price is already in our x402 offers. Thanks for building with us.`,
+  /** Data version the upstream later withdraws as wrong (a bad batch it published). */
+  badVersion: "feed-2026-10-28T09",
+  correction: `From: data-quality@summit-feed.example
+Subject: Correction: feed batch feed-2026-10-28T09
+
+The quotes we published in batch feed-2026-10-28T09 used a stale reference price and were wrong.
+Requests that returned that batch should be treated as incorrect. Later batches are correct.`,
 };
 
-export const BUYERS = ["RouteBuddy planner", "Peakfinder app", "CampCast agent"];
+export const BUYERS = ["Northgate Research agent", "Peakfinder Capital agent", "Lumen Analytics agent"];
 
-/** Opening limits. Sourcing and treasury may pay only listed payees; support may refund anyone, up to 50c each. */
+/** The three agents spend 20 *USDZ between them: sourcing 10 (at most 3c a purchase), support 4, treasury 6. */
+export const AGENT_CEILING_CENTS = 2_000;
 export const OPENING_LIMITS: AgentLimits[] = [
-  { agent: "SOURCING", capCents: 5, budgetCents: 300, payees: "LISTED" },
-  { agent: "SUPPORT", capCents: 50, budgetCents: 500, payees: "ANY" },
-  { agent: "TREASURY", capCents: 6_000, budgetCents: 6_000, payees: "LISTED" },
+  { agent: "SOURCING", capCents: 3, budgetCents: 1_000, payees: "LISTED" },
+  { agent: "SUPPORT", capCents: 10, budgetCents: 400, payees: "ANY" },
+  { agent: "TREASURY", capCents: 600, budgetCents: 600, payees: "LISTED" },
 ];
 
-/** The owner's opening *USDZ balance (testnet faucet grants plus last period's earnings). */
-export const OPENING_BALANCE_CENTS = 10_000;
+/** The owner's opening *USDZ: the 20 the agents may spend plus the gas reserve (testnet faucet grants). */
+export const OPENING_BALANCE_CENTS = 2_300;
 
-/** Calls served before and after the price change, and calls still expected this period. */
-export const CALLS_BEFORE = 40;
-export const CALLS_AFTER = 20;
-export const REMAINING_CALLS_EXPECTED = 120;
+/** Queries served before the price change and after the new limits, and upstream purchases still expected. */
+export const CALLS_BEFORE = 150;
+export const CALLS_AFTER = 60;
+export const REMAINING_CALLS_EXPECTED = 200;
+/** The upstream published its bad batch for these queries (1-based, inclusive). */
+export const BAD_BATCH_CALLS = { from: 121, to: 132 };
 
-export const CONTRACTOR = {
-  name: "Fenwick Cartography Ltd",
-  invoice: "FC-2026-10",
-  amount: 30,
-  currency: "GBP",
-  method: "LOCAL",
+/** The customer whose agent disputes a batch of charges. */
+export const DISPUTE = {
+  buyerIndex: 0,
+  /** Disputed queries (1-based call numbers): every one of this buyer's queries from call 100 to 151. */
+  fromCall: 100,
+  toCall: 151,
+  message: `From: payments@northgate-research.example
+Subject: Disputed charges
+
+Our agent never placed these orders, and some of the data you sold us was wrong.
+Please refund all of them.`,
+};
+
+/** Monthly data licence, invoiced in euros, paid by SWIFT like kit 1's EUR payout. */
+export const LICENCE = {
+  licensor: "Alpenkarten Daten GmbH",
+  invoice: "LIC-2026-10",
+  amount: 250,
+  currency: "EUR",
+  method: "SWIFT",
   beneficiary: {
-    transfer_methods: ["LOCAL"],
+    transfer_methods: ["SWIFT"],
     beneficiary: {
       entity_type: "COMPANY",
-      company_name: "Fenwick Cartography Ltd",
-      address: { street_address: "14 Grainger St", city: "Newcastle upon Tyne", postcode: "NE1 5JG", country_code: "GB" },
-      bank_details: { account_currency: "GBP", account_name: "Fenwick Cartography Ltd", account_number: "12345678", account_routing_type1: "sort_code", account_routing_value1: "200415", bank_country_code: "GB", local_clearing_system: "FASTER_PAYMENTS" },
+      company_name: "Alpenkarten Daten GmbH",
+      address: { street_address: "Leopoldstrasse 12", city: "Munich", postcode: "80802", country_code: "DE" },
+      bank_details: { account_currency: "EUR", account_name: "Alpenkarten Daten GmbH", iban: "DE89370400440532013000", swift_code: "COBADEFFXXX", bank_country_code: "DE" },
     },
   },
 };

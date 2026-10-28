@@ -3,20 +3,21 @@ import assert from "node:assert/strict";
 import { route, minCostToFinish, overrun, rationFloat, settleHold, type ProviderView, type Step } from "./policy.ts";
 
 const providers = (): ProviderView[] => [
-  { id: "atlas-large", kind: "model", tier: "premium", priceMicros: 15_000, latencyMs: 400, up: true },
-  { id: "beacon-mid", kind: "model", tier: "standard", priceMicros: 6_000, latencyMs: 300, up: true },
-  { id: "cobalt-mini", kind: "model", tier: "budget", priceMicros: 1_500, latencyMs: 200, up: true },
-  { id: "scout-search", kind: "search", tier: "standard", priceMicros: 5_000, latencyMs: 250, up: true },
+  // The guide's prices: 1, 2 and 5 cents a paragraph; a search 2 cents.
+  { id: "atlas-large", kind: "model", tier: "premium", priceMicros: 50_000, latencyMs: 400, up: true },
+  { id: "beacon-mid", kind: "model", tier: "standard", priceMicros: 20_000, latencyMs: 300, up: true },
+  { id: "cobalt-mini", kind: "model", tier: "budget", priceMicros: 10_000, latencyMs: 200, up: true },
+  { id: "scout-search", kind: "search", tier: "standard", priceMicros: 20_000, latencyMs: 250, up: true },
 ];
 const draft: Step = { id: "draft", kind: "model", chunks: 40, worthPremium: true, slaMs: 1_500 };
 const notes: Step = { id: "notes", kind: "model", chunks: 10, worthPremium: false, slaMs: 1_500 };
 
 test("a step worth premium goes premium when the job can afford it", () => {
-  assert.equal(route(draft, providers(), 1_000_000).provider, "atlas-large");
+  assert.equal(route(draft, providers(), 3_000_000).provider, "atlas-large");
 });
 
 test("premium falls back to the cheapest provider when the job cannot afford it", () => {
-  assert.equal(route(draft, providers(), 300_000).provider, "cobalt-mini");
+  assert.equal(route(draft, providers(), 500_000).provider, "cobalt-mini");
 });
 
 test("a provider slower than the SLA is skipped even when it is cheapest", () => {
@@ -37,7 +38,7 @@ test("the price used is the latest offer, so a price change reroutes", () => {
 test("a provider slower than the SLA does not count as the cheapest way to finish", () => {
   const ps = providers();
   ps.find((p) => p.id === "cobalt-mini")!.latencyMs = 2_500;
-  assert.equal(minCostToFinish([notes], ps), 60_000);
+  assert.equal(minCostToFinish([notes], ps), 200_000);
 });
 
 test("an overrun raises the hold before topping up, and never tops up beyond the hold", () => {
@@ -51,7 +52,8 @@ test("an overrun raises the hold before topping up, and never tops up beyond the
 
 test("the float is rationed above its floor, nearest-to-done first", () => {
   const r = rationFloat(900_000, [{ job: "A", micros: 400_000, progress: 0.3 }, { job: "B", micros: 500_000, progress: 0.6 }]);
-  assert.deepEqual(r.grants, [{ job: "B", micros: 500_000, waiting: 0 }, { job: "A", micros: 100_000, waiting: 300_000 }]);
+  // floor 50,000: 850,000 can be granted
+  assert.deepEqual(r.grants, [{ job: "B", micros: 500_000, waiting: 0 }, { job: "A", micros: 350_000, waiting: 50_000 }]);
 });
 
 test("each hold is captured once from the position, never above the hold; failed jobs are cancelled", () => {

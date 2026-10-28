@@ -1,18 +1,22 @@
 /**
  * Kit 11 — x402 Business Agents
  *
- * Trailhead sells a trail-conditions API to other agents, paid per call in *USDZ
- * over x402 on Metal. Three agents run the business from one Metal account, each
- * under its own mandate (spending limits Metal enforces):
- *   SOURCING buys upstream forecasts, SUPPORT refunds buyers, TREASURY moves
- *   earnings to Airwallex and pays a contractor's monthly GBP invoice.
- *  1. Fund the account, give each agent limits whose sum fits the balance.
- *  2. Serve buyers while buying upstream; refund a call.
- *  3. The upstream seller raises its price above the sourcing cap: the next
- *     purchase is refused (and recorded on chain), the buyer is refunded.
- *  4. Treasury proposes new limits; a person approves; mandates are replaced.
- *  5. Sweep earnings to a Metal address, credit them to Airwallex with the
- *     transaction hash as reference (never twice), convert, pay the invoice.
+ * Customers' agents buy market data per query (5c), paid in *USDZ over x402 on
+ * Metal. Three agents share 20 *USDZ under their own mandates (limits Metal enforces):
+ *   SOURCING buys the upstream data (10 *USDZ, at most 3c a purchase), SUPPORT
+ *   refunds customers (4), TREASURY moves earnings to Airwallex and pays a monthly
+ *   licence fee invoiced in euros (6).
+ *  1. Fund the account; the agents' budgets fit the 20 *USDZ and the balance.
+ *  2. Sell queries; each buys upstream data at 2c.
+ *  3. The upstream price rises to 4c, above the 3c cap: the next purchase is
+ *     refused (recorded on chain) and the customer refunded.
+ *  4. Treasury proposes new limits within the 20 *USDZ (and a higher query price
+ *     when the margin gets too thin); a person approves; mandates are replaced.
+ *  5. A customer disputes a batch: its agent "never placed" them and some data was
+ *     wrong. The signed orders on chain show it did; queries from the batch the
+ *     upstream withdrew are refunded from support's budget, none twice.
+ *  6. Sweep earnings to Airwallex with the Metal transaction hash as reference
+ *     (never credited twice), convert USD to EUR, pay the licence fee by SWIFT.
  */
 import { AirwallexClient, newRequestId, money } from "../../src/core/client.ts";
 import { Sandbox } from "../../src/core/sandbox.ts";
@@ -24,8 +28,8 @@ import { openMetal } from "../../src/metal/rail.ts";
 import { newAddress, MetalRefused, type Address, type Mandate } from "../../src/metal/emulator.ts";
 import { startSeller, payFetch, exactPayment, PaymentRefused, type Seller } from "../../src/metal/x402.ts";
 import { fmt } from "../../src/metal/units.ts";
-import { checkAllocation, proposeReallocation, sweepAmount, afterTimeout, depositDecision, type AgentId, type AgentLimits, type AgentState } from "./policy.ts";
-import { API, UPSTREAM, BUYERS, OPENING_LIMITS, OPENING_BALANCE_CENTS, CALLS_BEFORE, CALLS_AFTER, REMAINING_CALLS_EXPECTED, CONTRACTOR } from "./fixtures.ts";
+import { checkAllocation, proposeReallocation, sweepAmount, afterTimeout, depositDecision, resolveDisputedBatch, DEFAULT_POLICY, type AgentId, type AgentLimits, type AgentState, type DisputedCharge } from "./policy.ts";
+import { API, UPSTREAM, BUYERS, OPENING_LIMITS, OPENING_BALANCE_CENTS, CALLS_BEFORE, CALLS_AFTER, REMAINING_CALLS_EXPECTED, BAD_BATCH_CALLS, DISPUTE, LICENCE } from "./fixtures.ts";
 
 const awx = new AirwallexClient();
 const sb = new Sandbox(awx);
@@ -34,8 +38,8 @@ const short = (s: string) => `${s.slice(0, 10)}…${s.slice(-4)}`;
 const sellers: Seller[] = [];
 
 try {
-  say.title("Kit 11 · x402 Business Agents — one Metal account, three agents, limits that move when costs do");
-  say.beat("goal", `Keep ${API.name} answering buyers at a profit while three agents spend only within the limits a person set.`);
+  say.title("Kit 11 · x402 Business Agents — three agents share 20 *USDZ; limits move when costs do");
+  say.beat("goal", `Keep ${API.name} selling queries at a profit while three agents spend only within the 20 *USDZ of limits a person set.`);
 
   // ── Setup ────────────────────────────────────────────────────────────────
   say.beat("setup", "Fund the business's Metal account and give each agent its own key and limits.");
@@ -49,7 +53,7 @@ try {
 
   const alloc = checkAllocation(chain.balanceOf(owner), OPENING_LIMITS);
   if (!alloc.ok) throw new Error(`budgets ${alloc.totalCents}c exceed the room ${alloc.roomCents}c`);
-  say.decision("allocation", "FITS", `Agents may spend ${fmt(alloc.totalCents)} of ${fmt(alloc.roomCents)} available after the gas reserve; ${fmt(alloc.unallocatedCents)} left unallocated. Metal checks each mandate alone, so this sum is checked in code.`);
+  say.decision("allocation", "FITS", `Agents may spend ${fmt(alloc.budgetsCents)} between them (the ceiling is ${fmt(DEFAULT_POLICY.agentCeilingCents)}), inside the ${fmt(alloc.roomCents)} balance left after the gas reserve. Metal checks each mandate alone, so the sum is checked in code.`);
 
   const payeesFor = (a: AgentId): Address[] => (a === "SOURCING" ? [upstreamPayTo] : a === "TREASURY" ? [treasuryWallet] : []);
   const terms = (l: AgentLimits) => ({ payees: l.payees === "LISTED" ? payeesFor(l.agent) : [], capCents: l.capCents, budgetCents: l.budgetCents, expiresAt: Date.now() + 30 * 86_400_000, description: `${l.agent.toLowerCase()} agent` });
@@ -75,47 +79,56 @@ try {
 
   // ── x402 sellers ─────────────────────────────────────────────────────────
   let upstreamPrice = UPSTREAM.priceCents;
+  let apiPrice = API.priceCents;
+  let call = 0; // 1-based number of the query being served
+  const versionFor = (n: number) => (n >= BAD_BATCH_CALLS.from && n <= BAD_BATCH_CALLS.to ? UPSTREAM.badVersion : `feed-2026-10-28T${n < BAD_BATCH_CALLS.from ? "08" : "10"}`);
   const upstream = await startSeller(UPSTREAM.name, {
-    [UPSTREAM.path]: { scheme: "exact", price: () => upstreamPrice, payTo: upstreamPayTo, description: "7-day mountain forecast", handle: () => ({ forecast: "clear, 4°C at summit, wind 18 km/h" }) },
+    [UPSTREAM.path]: { scheme: "exact", price: () => upstreamPrice, payTo: upstreamPayTo, description: "reference price feed", handle: () => ({ version: versionFor(call), quote: "EUR/USD 1.0842, Brent 81.20" }) },
   }, facilitator);
   sellers.push(upstream);
 
   const stats = { revenue: 0, upstream: 0, refunds: 0, served: 0, refused: 0 };
+  /** Every sale: who paid, for which query, at what price, and which data version it returned. */
+  const sales = new Map<string, { buyer: Address; n: number; priceCents: number; version: string }>();
+  const refunded = new Set<string>();
   const refund = (to: Address, cents: number, why: string, paymentId: string) => {
-    const ev = chain.pull(mandates.SUPPORT.id, to, cents, { paymentId });
+    const ev = chain.pull(mandates.SUPPORT.id, to, cents, { paymentId: `refund-${paymentId}` });
     stats.refunds += cents;
+    refunded.add(paymentId);
+    audit({ kind: "decision", subject: "refund", action: why, paymentId, cents });
     return ev;
   };
   const api = await startSeller(API.name, {
     [API.path]: {
       scheme: "exact",
-      price: () => API.priceCents,
+      price: () => apiPrice,
       payTo: owner,
-      description: "Trail conditions for one route",
+      description: "One market-data query",
       handle: async (req) => {
-        const buyer = String(req.headers["x-buyer"] ?? "");
+        const buyer = String(req.headers["x-buyer"] ?? "") as Address;
         const paidId = String(req.headers["x-call"] ?? "");
-        stats.revenue += API.priceCents;
+        stats.revenue += apiPrice;
         try {
-          const up = await payFetch<{ forecast: string }>(`${upstream.url}${UPSTREAM.path}`, exactPayment(mandates.SOURCING.id));
+          const up = await payFetch<{ version: string; quote: string }>(`${upstream.url}${UPSTREAM.path}`, exactPayment(mandates.SOURCING.id));
           stats.upstream += up.price;
           stats.served += 1;
-          return { route: "Mount Tamalpais loop", conditions: up.body.forecast };
+          sales.set(paidId, { buyer, n: call, priceCents: apiPrice, version: up.body.version });
+          return { data: up.body.quote, version: up.body.version };
         } catch (err) {
           if (!(err instanceof PaymentRefused)) throw err;
           stats.refused += 1;
-          const ev = refund(buyer as Address, API.priceCents, "upstream refused", `refund-${paidId}`);
+          sales.set(paidId, { buyer, n: call, priceCents: apiPrice, version: "none" });
+          const ev = refund(buyer, apiPrice, "upstream refused", paidId);
           say.warn(`sourcing refused by Metal: ${err.reason} — ${err.detail}${err.tx ? ` · refusal recorded in ${short(err.tx)}` : ""}`);
-          say.step(`support refunded ${fmt(API.priceCents)} to the buyer · ${short(ev.tx)}`);
+          say.step(`support refunded ${fmt(apiPrice)} to the customer · ${short(ev.tx)}`);
           return { error: "upstream unavailable; refunded" };
         }
       },
     },
   }, facilitator);
   sellers.push(api);
-  say.step(`x402 sellers up: ${API.name} at ${fmt(API.priceCents)}/call (pays to the owner account) · upstream ${UPSTREAM.name} at ${fmt(upstreamPrice)}/call`);
+  say.step(`x402 sellers up: ${API.name} at ${fmt(apiPrice)}/query (pays to the owner account) · upstream ${UPSTREAM.name} at ${fmt(upstreamPrice)}/request`);
 
-  let call = 0;
   async function serve(n: number) {
     for (let i = 0; i < n; i++) {
       const b = buyers[call % buyers.length]!;
@@ -132,12 +145,9 @@ try {
   }
 
   // ── Serve ────────────────────────────────────────────────────────────────
-  say.beat("serve", `Buyer agents call the API; each paid call buys one upstream forecast at ${fmt(upstreamPrice)}.`);
+  say.beat("serve", `Customers' agents buy queries at ${fmt(apiPrice)}; each sale buys upstream data at ${fmt(upstreamPrice)}.`);
   await serve(CALLS_BEFORE);
-  say.ok(`${stats.served} calls served · revenue ${fmt(stats.revenue)} · upstream ${fmt(stats.upstream)} · margin ${fmt(stats.revenue - stats.upstream)}`);
-  const complaint = buyers[1]!;
-  const ev1 = refund(complaint.acct, API.priceCents, "stale answer", "refund-complaint-1");
-  say.ok(`${complaint.name} reported a stale answer: support refunded ${fmt(API.priceCents)} (any payee, under its ${fmt(OPENING_LIMITS[1]!.capCents)} cap) · ${short(ev1.tx)}`);
+  say.ok(`${stats.served} queries sold · revenue ${fmt(stats.revenue)} · upstream ${fmt(stats.upstream)} · margin ${fmt(stats.revenue - stats.upstream)}`);
 
   // ── Price change ─────────────────────────────────────────────────────────
   say.beat("new information", "The upstream seller raises its price.");
@@ -159,11 +169,9 @@ try {
       const s = chain.status(mandates[a].id);
       return { agent: a, capCents: s.capCents, budgetCents: s.budgetCents, spentCents: s.spentCents, payees: chain.mandate(mandates[a].id).payees.length ? "LISTED" : "ANY" };
     });
-  const gbpRate = Number((await awx.get("/fx/rates/current", { query: { buy_currency: "GBP", sell_currency: "USD", buy_amount: CONTRACTOR.amount } })).rate);
-  const invoiceUsdCents = Math.ceil(CONTRACTOR.amount * gbpRate * 100);
-  const treasuryNeed = sweepAmount(chain.balanceOf(owner), states());
-  const r = proposeReallocation({ agents: states(), balanceCents: chain.balanceOf(owner), newUpstreamPriceCents: upstreamPrice, apiPriceCents: API.priceCents, remainingCalls: REMAINING_CALLS_EXPECTED, treasuryNeedCents: treasuryNeed });
-  say.step(`expected this period: ${REMAINING_CALLS_EXPECTED} more upstream calls × ${fmt(upstreamPrice)} = ${fmt(r.sourcingNeedCents)} · sourcing has ${fmt(states()[0]!.budgetCents - states()[0]!.spentCents)} left · treasury needs ${fmt(treasuryNeed)} (invoice ≈ ${usd(invoiceUsdCents / 100)} at ${gbpRate} USD/GBP)`);
+  const treasuryNeed = OPENING_LIMITS[2]!.budgetCents; // the whole treasury budget is earmarked for this month's sweep
+  const r = proposeReallocation({ agents: states(), balanceCents: chain.balanceOf(owner), newUpstreamPriceCents: upstreamPrice, apiPriceCents: apiPrice, remainingCalls: REMAINING_CALLS_EXPECTED, treasuryNeedCents: treasuryNeed });
+  say.step(`expected this period: ${REMAINING_CALLS_EXPECTED} more upstream requests × ${fmt(upstreamPrice)} = ${fmt(r.sourcingNeedCents)} · sourcing has ${fmt(states()[0]!.budgetCents - states()[0]!.spentCents)} left · treasury keeps its ${fmt(treasuryNeed)} for the earnings sweep`);
   say.decision("limits", r.action, await explain({ ...r }, r.reason));
   const before = states();
   say.table(r.limits.map((l) => {
@@ -172,7 +180,8 @@ try {
   }));
   if (r.action !== "REALLOCATE") throw new Error(`policy chose ${r.action}; this demo expects a reallocation`);
 
-  const t: Terms = { action: "REPLACE_MANDATES", amount: r.shortfallCents / 100, currency: "USDZ", counterparty: "Metal account " + short(owner), limits: r.limits.map((l) => `${l.agent} cap ${l.capCents}c budget ${l.budgetCents}c`).join("; "), moves: r.moves.map((m) => `${m.cents}c from ${m.from}`).join(", ") };
+  if (r.apiPriceCents !== apiPrice) say.step(`query price ${fmt(apiPrice)} → ${fmt(r.apiPriceCents)}: at ${fmt(upstreamPrice)} upstream the margin would be ${fmt(apiPrice - upstreamPrice)}, below the ${fmt(DEFAULT_POLICY.minMarginCents)} minimum`);
+  const t: Terms = { action: "REPLACE_MANDATES", amount: r.shortfallCents / 100, currency: "USDZ", counterparty: "Metal account " + short(owner), limits: r.limits.map((l) => `${l.agent} cap ${l.capCents}c budget ${l.budgetCents}c`).join("; "), moves: r.moves.map((m) => `${m.cents}c from ${m.from}`).join(", "), query_price: `${r.apiPriceCents}c` };
   assertApproved(t, await requestApproval(t, "Approve the new spending limits? The owner key signs them; agents never hold it."));
   for (const l of r.limits) {
     const old = mandates[l.agent];
@@ -182,16 +191,33 @@ try {
   }
   const fits = checkAllocation(chain.balanceOf(owner), states());
   if (!fits.ok) throw new Error("new limits exceed the balance");
-  say.ok(`mandates replaced (spend carried over); agents may still spend ${fmt(fits.totalCents)} of ${fmt(fits.roomCents)}`);
+  apiPrice = r.apiPriceCents;
+  say.ok(`mandates replaced (spend carried over); budgets total ${fmt(fits.budgetsCents)} of the ${fmt(DEFAULT_POLICY.agentCeilingCents)} ceiling; agents may still spend ${fmt(fits.totalCents)}; queries now ${fmt(apiPrice)}`);
   limitsTable();
 
-  say.beat("serve", `Buyers keep calling; sourcing now pays ${fmt(upstreamPrice)} within its new cap.`);
+  say.beat("serve", `Customers keep buying at ${fmt(apiPrice)}; sourcing now pays ${fmt(upstreamPrice)} within its new cap.`);
   const servedBefore = stats.served;
   await serve(CALLS_AFTER);
-  say.ok(`${stats.served - servedBefore} more calls served · total revenue ${fmt(stats.revenue)} · upstream ${fmt(stats.upstream)} · refunds ${fmt(stats.refunds)}`);
+  say.ok(`${stats.served - servedBefore} more queries sold · total revenue ${fmt(stats.revenue)} · upstream ${fmt(stats.upstream)} · refunds ${fmt(stats.refunds)}`);
+
+  // ── Disputed batch ───────────────────────────────────────────────────────
+  say.beat("new information", "A customer disputes a batch of charges, and the upstream withdraws a batch of its data.");
+  const disputer = buyers[DISPUTE.buyerIndex]!;
+  say.document(DISPUTE.message);
+  say.document(UPSTREAM.correction);
+  const disputedIds = [...sales.entries()].filter(([, v]) => v.buyer === disputer.acct && v.n >= DISPUTE.fromCall && v.n <= DISPUTE.toCall).map(([id]) => id);
+  // The signed orders: each charge is a payment the customer's own key signed under its own mandate.
+  const signed = new Map(chain.verify(disputer.mandate.id).filter((e) => e.kind === "payment" && e.to === owner && e.paymentId).map((e) => [e.paymentId!, e]));
+  const charges: DisputedCharge[] = disputedIds.map((id) => ({ paymentId: id, signedOnChain: signed.has(id), dataVersion: sales.get(id)!.version, alreadyRefunded: refunded.has(id) }));
+  const d = resolveDisputedBatch(charges, [UPSTREAM.badVersion], (id) => sales.get(id)!.priceCents);
+  say.table(d.lines.map((l) => ({ query: sales.get(l.paymentId)!.n, signed_order: l.signedOnChain ? `block ${signed.get(l.paymentId)!.block}` : "none", data: l.dataVersion, outcome: l.outcome, refund: fmt(l.refundCents) })));
+  say.decision("disputed batch", d.summary.noSuchCharge ? "PARTLY_UNPROVEN" : "SIGNED_BY_CUSTOMER", await explain({ ...d.summary, refundCents: d.refundCents }, `All ${charges.length} disputed charges are payments signed under ${disputer.name}'s own mandate, so its agent did place them. ${d.summary.refund} returned data from the withdrawn batch ${UPSTREAM.badVersion}: refund those. ${d.summary.alreadyRefunded} was already refunded when the upstream refused it, so it is not refunded again. The other ${d.summary.upheld} stand.`));
+  for (const l of d.lines.filter((x) => x.outcome === "REFUND_WRONG_DATA")) refund(disputer.acct, l.refundCents, "wrong data", l.paymentId);
+  const supportLeft = chain.status(mandates.SUPPORT.id);
+  say.ok(`support refunded ${d.summary.refund} queries (${fmt(d.refundCents)}) from its own budget, each under its ${fmt(supportLeft.capCents)} cap · support has ${fmt(supportLeft.remainingCents)} left · no charge refunded twice`);
 
   // ── Treasury to Airwallex ────────────────────────────────────────────────
-  say.beat("treasury", "Move earnings above what the agents may still spend to Airwallex, then pay the contractor.");
+  say.beat("treasury", "Move earnings above what the agents may still spend to Airwallex, then pay the licence fee in euros.");
   const sweep = Math.min(sweepAmount(chain.balanceOf(owner), states()), chain.status(mandates.TREASURY.id).capCents, chain.status(mandates.TREASURY.id).remainingCents);
   const sweepId = `sweep-${new Date().toISOString().slice(0, 10)}`;
   say.step(`sweep ${fmt(sweep)}: balance ${fmt(chain.balanceOf(owner))} minus sourcing and support headroom and the gas reserve`);
@@ -224,12 +250,14 @@ try {
   say.step(`a retry of the credit step reads GET /deposits first → ${dec2}${seen ? "" : " (deposit list not updated yet; the deposit id above is the record)"}`);
   audit({ kind: "decision", subject: "credit retry", action: dec2 });
 
-  // Contractor invoice: convert exactly the GBP needed, pay by Faster Payments.
-  const quote = await awx.post("/fx/quotes/create", { request_id: newRequestId(), buy_currency: "GBP", sell_currency: "USD", buy_amount: CONTRACTOR.amount, validity: "MIN_1" });
-  const conv = await awx.post("/fx/conversions/create", { request_id: newRequestId(), quote_id: quote.quote_id, buy_currency: "GBP", sell_currency: "USD", buy_amount: CONTRACTOR.amount });
-  say.ok(`FX ${conv.status}: bought GBP ${conv.buy_amount} for USD ${conv.sell_amount} @ ${conv.client_rate ?? quote.client_rate}`);
-  const ben = await awx.post("/beneficiaries/create", { request_id: newRequestId(), ...CONTRACTOR.beneficiary });
-  const tr = await awx.post("/transfers/create", { request_id: newRequestId(), beneficiary_id: ben.id ?? ben.beneficiary_id, transfer_amount: String(CONTRACTOR.amount), transfer_currency: "GBP", source_currency: "GBP", transfer_method: "LOCAL", reference: CONTRACTOR.invoice, reason: "professional_business_services" });
+  // Licence fee: kit 1's calls. Convert exactly the EUR needed (invoice plus the SWIFT fee), pay by SWIFT.
+  const swiftFee = 12.85;
+  const eurNeeded = money(LICENCE.amount + swiftFee);
+  const quote = await awx.post("/fx/quotes/create", { request_id: newRequestId(), buy_currency: "EUR", sell_currency: "USD", buy_amount: eurNeeded, validity: "MIN_1" });
+  const conv = await awx.post("/fx/conversions/create", { request_id: newRequestId(), quote_id: quote.quote_id, buy_currency: "EUR", sell_currency: "USD", buy_amount: eurNeeded });
+  say.ok(`FX ${conv.status}: bought EUR ${conv.buy_amount} (invoice ${LICENCE.amount} + SWIFT fee ${swiftFee}) for USD ${conv.sell_amount} @ ${conv.client_rate ?? quote.client_rate}`);
+  const ben = await awx.post("/beneficiaries/create", { request_id: newRequestId(), ...LICENCE.beneficiary });
+  const tr = await awx.post("/transfers/create", { request_id: newRequestId(), beneficiary_id: ben.id ?? ben.beneficiary_id, transfer_amount: String(LICENCE.amount), transfer_currency: "EUR", source_currency: "EUR", transfer_method: "SWIFT", reference: LICENCE.invoice, reason: "professional_business_services" });
   await sb.transferTransition(tr.id, "SENT");
   await sb.transferTransition(tr.id, "PAID").catch(() => {});
   let status = "";
@@ -238,21 +266,22 @@ try {
     if (status === "PAID") break;
     await sleep(1500);
   }
-  say.ok(`invoice ${CONTRACTOR.invoice}: GBP ${CONTRACTOR.amount} to ${CONTRACTOR.name} by Faster Payments → ${status}`);
+  say.ok(`licence ${LICENCE.invoice}: EUR ${LICENCE.amount} to ${LICENCE.licensor} by SWIFT (fee ${tr.fee_amount ?? swiftFee}) → ${status}`);
 
   // ── Result ───────────────────────────────────────────────────────────────
   say.beat("result", metal.mode === "emulated" ? "Final state (Metal side EMULATED; Airwallex live)." : "Final state read back from Metal and Airwallex.");
   limitsTable();
   const final = checkAllocation(chain.balanceOf(owner), states());
   say.table([
-    { item: "API revenue (x402)", usdz: fmt(stats.revenue) },
+    { item: "Query revenue (x402)", usdz: fmt(stats.revenue) },
     { item: "Upstream purchases", usdz: fmt(-stats.upstream) },
     { item: "Refunds", usdz: fmt(-stats.refunds) },
     { item: "Swept to Airwallex", usdz: fmt(-sweep) },
     { item: "Owner account now", usdz: fmt(chain.balanceOf(owner)) },
     { item: "Budgets left, all agents", usdz: fmt(states().reduce((s, a) => s + a.budgetCents - a.spentCents, 0)) },
   ]);
-  say[final.ok ? "ok" : "fail"](`one refusal, no unapproved limit change, sweep paid once and credited once, invoice ${status}; what agents may still spend (${fmt(final.totalCents)}) ${final.ok ? "fits" : "EXCEEDS"} the balance after gas (${fmt(final.roomCents)})`);
+  const good = final.ok && status === "PAID" && refusals.length === 1;
+  say[good ? "ok" : "fail"](`one refusal, no unapproved limit change, disputed batch resolved (${d.summary.refund} refunded, none twice), sweep paid once and credited once, licence fee ${status}; budgets ${fmt(final.budgetsCents)} within the ${fmt(DEFAULT_POLICY.agentCeilingCents)} ceiling and what agents may still spend (${fmt(final.totalCents)}) ${final.ok ? "fits" : "EXCEEDS"} the balance after gas (${fmt(final.roomCents)})`);
   say.step(`audit log: ${auditPath}`);
 } finally {
   await Promise.all(sellers.map((s) => s.close()));

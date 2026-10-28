@@ -44,7 +44,7 @@ Twelve finance agents for **Trailhead Outfitters LLC**, a US business, built on 
 | [08](kits/08-marketplace-settlement/README.md) | Multi-Tenant Platforms | Marketplace Settlement Agent | Seller reserves, net payouts, re-reserving on new risk, recovering refund shortfalls |
 | [09](kits/09-approval-bound-shopping/README.md) | Agentic Commerce | Approval-Bound Shopping Agent | Buy only what the shopper approved, ask again on any change, never pay twice |
 | [10](kits/10-merchant-agentic-checkout/README.md) | Agentic Commerce | Merchant-Enabled Agentic Checkout | Sell through an AI assistant via the merchant's MCP tools and a hosted payment page |
-| [11](kits/11-x402-business-agents/README.md) | Agent Payments | x402 Business Agents | Three agents on one Metal account: whose spending limits move, and from where, when a supplier's price rises |
+| [11](kits/11-x402-business-agents/README.md) | Agent Payments | x402 Business Agents | Three agents sharing 20 *USDZ: whose limits move, and from where, when a supplier's price rises; which disputed charges to refund |
 | [12](kits/12-inference-sourcing/README.md) | Inference Sourcing | Inference Sourcing Agent | Which provider each AI step is bought from, and how card holds and a short float stretch when a job overruns |
 
 Every run shows the five parts the guide asks for: the **goal**, the agent's **plan**, the **new information**, the **revised decision**, and the resulting **balance, payment or status**.
@@ -202,7 +202,7 @@ Faucet limits: ten grants per IP per UTC day, one per minute. Each grant tops an
 | The guide says | How it's done here |
 |---|---|
 | Choose a finance task someone repeats and find the decision inside it | Each kit's "decision it makes" in [the agents table](#the-agents) |
-| The agent chooses differently when a balance, deadline, evidence or risk changes | Every run has a **new information** step that changes a decision: a late receivable (kit 1), a price rise (kits 2, 11), a bank return (kit 3), new dispute evidence (kit 4), a token overrun (kit 12) |
+| The agent chooses differently when a balance, deadline, evidence or risk changes | Every run has a **new information** step that changes a decision: a late receivable (kit 1), a price rise (kits 2, 11), a disputed batch (kit 11), a bank return (kit 3), new dispute evidence (kit 4), a token overrun (kit 12) |
 | Let the agent move money or update financial state, and say which actions need a person | Each kit moves money or state in the sandbox; actions above policy limits stop on an approval card |
 | Show goal, plan, new information, revised decision, resulting balance | The console's GOAL, PLAN, NEW INFORMATION, DECIDE and RESULT sections in every run |
 | Keep amounts, limits, reserves, validation, duplicate protection and state transitions in code | `kits/*/policy.ts`: pure functions with tests (`kits/*/policy.test.ts`); `src/core/lock.ts` for duplicate protection |
@@ -249,7 +249,7 @@ Status on our US sandbox account: **every Airwallex call in all twelve kits runs
 | 6, 7 | Connected accounts, payroll and loan flows, FX and payouts | – (FX and payouts inside connected accounts are routed through the platform account, see below) |
 | 8 | Connected accounts, seller payouts, reserves, refunds | – |
 | 9, 10 | Browser shopping, merchant MCP checkout, live card payments and declines | Airi CLI and Airwallex's merchant-side Agentic Commerce (awaiting access; the test card and local merchant MCP run meanwhile) |
-| 11 | Deposits credited by Metal transaction hash, FX, GBP Faster Payments payout | Metal spending limits (binding a mandate reverts on Metal testnet) |
+| 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee | Metal spending limits (binding a mandate reverts on Metal testnet) |
 | 12 | Card pre-authorization holds, increments, single captures, cancels | Metal clearing (live adapter not wired yet) |
 
 **FX and payouts inside connected accounts.** Airwallex has not configured fee pricing for FX conversions and payouts made on a connected account's behalf (`unconfigured_client_fee`, `fee_unknown`). Kits 6 and 7 then route those operations through the platform account, live: the customer's own balance is charged, the platform converts or pays out, and converted money goes back to the customer. Each customer's money still only pays for that customer.
@@ -279,7 +279,7 @@ Behind a proxy on Node 22+, run with `NODE_USE_ENV_PROXY=1`.
 ## Tests
 
 ```sh
-npm test                     # 62 policy tests across all twelve kits
+npm test                     # 63 policy tests across all twelve kits
 npm run typecheck
 npm run verify               # both, as CI runs them
 ```

@@ -12,7 +12,7 @@
  */
 import { newRequestId } from "../../src/core/client.ts";
 import { PlatformClient } from "../../src/core/platform-client.ts";
-import { onboardAndFund, transferToCustomer, chargeCustomer, waitSettled, balanceOf } from "../../src/core/platform.ts";
+import { onboardAndFund, transferToCustomer, chargeCustomer, waitSettled, balanceOf, depositAndWait } from "../../src/core/platform.ts";
 import { say, usd } from "../../src/core/narrate.ts";
 import { explain } from "../../src/core/llm.ts";
 import { requestApproval, assertApproved, type Terms } from "../../src/core/approval.ts";
@@ -80,7 +80,7 @@ for (const c of CUSTOMERS.filter((x) => x.key !== "ACME")) {
 say.beat("new information", "Bluefin Studio's late deposit lands.");
 const bluefin = CUSTOMERS.find((c) => c.key === "BLUEFIN")!;
 const ga = (await awx.get("/global_accounts", { onBehalfOf: accts.BLUEFIN!.id })).items[0];
-await awx.post("/simulation/deposit/create", { global_account_id: ga.id, amount: bluefin.lateDeposit, payer_name: "Client payment" }, { onBehalfOf: accts.BLUEFIN!.id });
+await depositAndWait(awx, accts.BLUEFIN!.id, ga.id, bluefin.lateDeposit, "Client payment");
 say.step(`${bluefin.spec.name} wallet now ${usd(await balanceOf(awx, accts.BLUEFIN!.id))}`);
 
 say.beat("collect", "Recover the bridge and charge each customer the monthly platform fee.");
