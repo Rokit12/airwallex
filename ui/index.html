@@ -247,7 +247,7 @@ const RAILS = {
   "09": { live: "Airwallex: card payment intents; a real browser checks out on the test store", sim: "Card credentials come from the sandbox test card", why: "waiting on Airwallex's Airi CLI access" },
   "10": { live: "Airwallex: card payment intents, declines and retries on the same checkout", sim: "Merchant MCP tools and the 120-product catalogue run locally", why: "waiting on Airwallex merchant-side access" },
   "11": { live: "Airwallex: deposit credited by Metal transaction, FX to EUR, SWIFT licence fee · Metal testnet x402 payments (npm run metal:check)", sim: "Metal mandates (spending limits) and on-chain refusals", why: "200+ on-chain payments are too slow and gas-limited for a demo; the same limits are proven live by npm run metal:check" },
-  "12": { live: "Airwallex: card pre-authorization holds, increments, single captures, cancels", sim: "Metal clearing (deposits, epochs, withdrawals)", why: "live clearing adapter not wired yet" },
+  "12": { live: "Airwallex: card pre-authorization holds, increments, single captures, cancels · Metal clearing on testnet: deposits, signed running totals, withdrawals", note: "A live run takes 15–20 minutes: Metal releases withdrawals after two 5-minute challenge windows. METAL=emulated runs it in 30 seconds." },
 };
 const partlySimulated = (id) => Boolean(RAILS[id]?.sim);
 

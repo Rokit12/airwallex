@@ -26,7 +26,8 @@
     "setup:browser": "playwright install chromium",
     "test": "tsx --test kits/*/policy.test.ts",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm test"
+    "verify": "npm run typecheck && npm test",
+    "metal:withdraw": "tsx src/metal/withdraw.ts"
   },
   "license": "MIT",
   "devDependencies": {

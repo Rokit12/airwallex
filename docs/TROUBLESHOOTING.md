@@ -34,6 +34,8 @@ To check whether a feature is live, run a kit with `RAILS=live`.
 
 | What you see | Fix |
 |---|---|
+| Kit 12: `Metal clearing: the clearing service … is not reachable` | Your network blocks `clearing-testnet.metalntwx.com` | Allow `*.metalntwx.com`. Until then kit 12 runs clearing on the emulator and labels the run |
+| Kit 12 waits about ten minutes for job C's withdrawal | Normal on live clearing: Metal releases a withdrawal after two 5-minute challenge windows | Wait, or run `METAL=emulated npm run kit12` for a 30-second run |
 | `no METAL_RPC_URL set` | Create an endpoint at https://console-testnet.metalntwx.com (billing accepts an Airwallex sandbox test card) and add `METAL_RPC_URL` to `.env` |
 | `ENOTFOUND` from the faucet or facilitator | Behind a proxy on Node 22+, run with `NODE_USE_ENV_PROXY=1` |
 | Faucet refuses | Ten grants per IP per UTC day, one client per minute; retry later or fund from the console's Faucet page | It fails fast instead of falling back to the emulator.

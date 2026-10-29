@@ -18,16 +18,16 @@ import { AirwallexClient, newRequestId } from "../../src/core/client.ts";
 import { say, usd } from "../../src/core/narrate.ts";
 import { explain } from "../../src/core/llm.ts";
 import { requestApproval, assertApproved, type Terms } from "../../src/core/approval.ts";
-import { auditPath } from "../../src/core/audit.ts";
-import { openMetal } from "../../src/metal/rail.ts";
-import { newAddress, type Address } from "../../src/metal/emulator.ts";
-import { startSeller, payFetch, clearingPayment, PaymentRefused, type Seller } from "../../src/metal/x402.ts";
+import { auditPath, audit } from "../../src/core/audit.ts";
+import { newAddress } from "../../src/metal/emulator.ts";
+import { PaymentRefused } from "../../src/metal/x402.ts";
+import { emulatedClearing, liveClearing, liveClearingAvailable, type ClearingPort } from "../../src/metal/clearing-port.ts";
 import { fmt, fmtMicros } from "../../src/metal/units.ts";
 import { route, minCostToFinish, overrun, rationFloat, settleHold, DEFAULT_POLICY as P, type ProviderView, type Step } from "./policy.ts";
 import { PROVIDERS, JOBS, FLOAT_CENTS, OVERRUN, MISSING_FILINGS, SLOW_LATENCY_MS, type JobSpec } from "./fixtures.ts";
 
 const awx = new AirwallexClient();
-const sellers: Seller[] = [];
+let cp: ClearingPort | undefined;
 const TEST_CARD = { number: "4035501000000008", expiry_month: "12", expiry_year: "2030", cvc: "123" };
 
 interface Job extends JobSpec {
@@ -47,45 +47,49 @@ try {
 
   // ── Providers ────────────────────────────────────────────────────────────
   say.beat("setup", "Start the x402 providers, hold each customer's card, deposit into clearing per job.");
-  const metal = await openMetal(true);
-  const { chain, clearing, facilitator } = metal;
-  if (!clearing) throw new Error("clearing unavailable");
-  const live = Object.fromEntries(PROVIDERS.map((p) => [p.id, { price: p.priceMicros, latency: p.latencyMs, observed: p.latencyMs, payTo: newAddress() as Address }]));
-  let missingFilingsFor: string | null = null;
-  for (const p of PROVIDERS) {
-    const s = await startSeller(p.name, {
-      "/unit": {
-        scheme: "clearing",
-        price: () => live[p.id]!.price,
-        payTo: live[p.id]!.payTo,
-        description: `one ${p.kind === "model" ? "paragraph" : p.kind === "search" ? "search" : "lookup"}`,
-        latencyMs: () => live[p.id]!.latency,
-        handle: (_req, url) => {
-          if (p.kind === "data" && url.searchParams.get("job") === missingFilingsFor) return { found: false };
-          return { found: true, text: p.kind === "model" ? "…stand-in text for one paragraph…" : p.kind === "search" ? "3 results" : "1 filing" };
-        },
-      },
-    }, facilitator);
-    sellers.push(s);
-    (live[p.id] as any).url = `${s.url}/unit`;
+  // Metal clearing: live on testnet when its clearing service is reachable, otherwise the emulator.
+  const forced = process.env.METAL === "emulated" || process.env.RAILS === "emulated";
+  const avail = forced ? { ok: false, why: "METAL=emulated" } : await liveClearingAvailable();
+  if (avail.ok) {
+    cp = await liveClearing(FLOAT_CENTS, (avail as any).extra);
+    say.ok("Metal clearing: live on testnet (each job is its own clearing wallet; payments sign running totals off chain; epochs every few seconds)");
+  } else {
+    if (process.env.METAL === "live" || process.env.RAILS === "live") throw new Error(`Metal clearing live required but unavailable: ${avail.why}`);
+    say.warn(`Metal clearing: ${avail.why}. Running clearing on the Metal emulator (documented deposits, epochs, refusals and withdrawals); Airwallex stays live. Results labelled EMULATED.`);
+    audit({ kind: "rail_switch", rail: "metal-clearing", to: "emulated", cause: avail.why });
+    cp = emulatedClearing(FLOAT_CENTS);
   }
+  const clearing = cp;
+  const live = Object.fromEntries(PROVIDERS.map((p) => [p.id, { price: p.priceMicros, latency: p.latencyMs, observed: p.latencyMs }]));
+  let missingFilingsFor: string | null = null;
+  await clearing.startProviders(PROVIDERS.map((p) => ({
+    id: p.id,
+    name: p.name,
+    description: `one ${p.kind === "model" ? "paragraph" : p.kind === "search" ? "search" : "lookup"}`,
+    priceMicros: () => live[p.id]!.price,
+    latencyMs: () => live[p.id]!.latency,
+    handle: (job: string | null) => {
+      if (p.kind === "data" && job === missingFilingsFor) return { found: false };
+      return { found: true, text: p.kind === "model" ? "…stand-in text for one paragraph…" : p.kind === "search" ? "3 results" : "1 filing" };
+    },
+  })));
   say.table(PROVIDERS.map((p) => ({ provider: p.id, kind: p.kind, tier: p.tier, "price per unit": fmtMicros(p.priceMicros), clearing: "yes" })));
 
   // ── Holds and deposits ───────────────────────────────────────────────────
-  const operator = newAddress();
-  chain.faucet(operator, FLOAT_CENTS);
   const jobs: Job[] = [];
   for (const spec of JOBS) {
     const pi = await awx.post("/pa/payment_intents/create", { request_id: newRequestId(), amount: spec.holdCents / 100, currency: "USD", merchant_order_id: `JOB-${spec.id}-${Date.now().toString(36).toUpperCase()}`, descriptor: "TRAILHEAD RESEARCH" });
     const held = await awx.post(`/pa/payment_intents/${pi.id}/confirm`, { request_id: newRequestId(), payment_method: { type: "card", card: { ...TEST_CARD, name: spec.customer } }, payment_method_options: { card: { authorization_type: "pre_auth", auto_capture: false } } });
-    jobs.push({ ...spec, key: `job-${spec.id}-${newAddress().slice(2, 10)}`, intent: pi.id, hold: spec.holdCents, stepIndex: 0, chunksDone: 0, failed: false, emptyLookups: 0, spentByProvider: {} });
+    const key = `job-${spec.id}-${newAddress().slice(2, 10)}`;
+    await clearing.openJob(key);
+    jobs.push({ ...spec, key, intent: pi.id, hold: spec.holdCents, stepIndex: 0, chunksDone: 0, failed: false, emptyLookups: 0, spentByProvider: {} });
     say.step(`job ${spec.id} · ${spec.customer} · "${spec.title}" · card hold ${usd(spec.holdCents / 100)} → ${held.status}`);
   }
-  say.step(`float ${fmt(chain.balanceOf(operator))} covers less than the holds combined (${usd(JOBS.reduce((s, j) => s + j.holdCents, 0) / 100)}); floor ${fmtMicros(P.floatFloorMicros)}`);
-  for (const j of jobs) clearing.deposit(operator, j.key, j.depositCents);
-  say.table(jobs.map((j) => ({ job: j.id, deposit: fmt(j.depositCents), counts_from_epoch: clearing.epoch + 1, spendable_now: fmtMicros(clearing.spendable(j.key)) })));
-  say.step(`float left ${fmt(chain.balanceOf(operator))}. Deposits count from the next epoch, so nothing can be spent until epoch ${clearing.epoch} closes.`);
-  clearing.closeEpoch();
+  say.step(`float ${fmt(clearing.floatCents())} covers less than the holds combined (${usd(JOBS.reduce((s, j) => s + j.holdCents, 0) / 100)}); floor ${fmtMicros(P.floatFloorMicros)}`);
+  for (const j of jobs) await clearing.deposit(j.key, j.depositCents);
+  say.table(jobs.map((j) => ({ job: j.id, deposit: fmt(j.depositCents), counts_from_epoch: clearing.epoch + 1 })));
+  say.step(`float left ${fmt(clearing.floatCents())}. Deposits count from the next epoch, so nothing can be spent until epoch ${clearing.epoch} closes.`);
+  await clearing.nextEpoch();
   say.ok(`epoch closed → epoch ${clearing.epoch}; each job key can now spend its deposit`);
 
   // ── Run ──────────────────────────────────────────────────────────────────
@@ -96,10 +100,10 @@ try {
   /** Buy one chunk for a job from a provider, reading its 402 offer first. */
   async function buy(j: Job, providerId: string) {
     const lp = live[providerId]!;
-    const res = await payFetch<{ found: boolean }>(`${(lp as any).url}?job=${j.id}`, clearingPayment(j.key, () => clearing!.position(j.key).total));
-    lp.price = res.price; // the offer is the price; nothing cached beyond this request
-    lp.observed = Math.round(lp.observed * 0.3 + res.ms * 0.7);
-    j.spentByProvider[providerId] = (j.spentByProvider[providerId] ?? 0) + res.price;
+    const res = await clearing.buy<{ found: boolean }>(j.key, providerId, j.id);
+    lp.price = res.priceMicros; // the offer is the price; nothing cached beyond this request
+    lp.observed = Math.round(lp.observed * 0.3 + res.providerMs * 0.7); // the provider's own answer time, not payment settlement
+    j.spentByProvider[providerId] = (j.spentByProvider[providerId] ?? 0) + res.priceMicros;
     return res;
   }
 
@@ -110,7 +114,7 @@ try {
     const s = j.steps[j.stepIndex];
     if (!s) return "done";
     const step = remainingOf(j, s);
-    const available = j.hold * 10_000 - clearing!.position(j.key).total - minCostToFinish(restOf(j), views());
+    const available = j.hold * 10_000 - clearing.spent(j.key) - minCostToFinish(restOf(j), views());
     const r = route(step, views(), available);
     const tag = `${j.id}:${s.id}`;
     if (routed.get(tag) !== r.provider) {
@@ -156,13 +160,14 @@ try {
     if (jobs.every((j) => j.stepIndex >= 3 || j.failed)) break;
     if (!moved) break;
   }
-  say.table(jobs.map((j) => ({ job: j.id, step: j.failed ? "FAILED" : j.steps[j.stepIndex]?.id ?? "done", spent: fmtMicros(clearing.position(j.key).total), spendable: fmtMicros(clearing.spendable(j.key)) })));
+  say.table(jobs.map((j) => ({ job: j.id, step: j.failed ? "FAILED" : j.steps[j.stepIndex]?.id ?? "done", spent: fmtMicros(clearing.spent(j.key)), spendable: fmtMicros(clearing.spendable(j.key)) })));
 
   // Job C failed: stop spending, queue its unspent deposit for withdrawal.
   const C = jobs.find((j) => j.failed);
   if (C) {
-    const w = clearing.withdraw(C.key);
-    say.decision(`job ${C.id}`, "STOP AND WITHDRAW", `No filings exist to write from; spending more buys nothing. ${fmtMicros(w.queued)} queued for withdrawal, claimable after epoch ${w.epoch} closes. Its card hold is cancelled at settlement, so ${C.customer} is not charged.`);
+    const w = await clearing.withdraw(C.key);
+    const when = clearing.mode === "live" ? "claimable once its epoch is final (Metal's 5-minute challenge window)" : `claimable after epoch ${w.epoch} closes`;
+    say.decision(`job ${C.id}`, "STOP AND WITHDRAW", `No filings exist to write from; spending more buys nothing. ${fmtMicros(w.queuedMicros)} queued for withdrawal, ${when}. Its card hold is cancelled at settlement, so ${C.customer} is not charged.`);
   }
 
   // ── New information ──────────────────────────────────────────────────────
@@ -177,7 +182,7 @@ try {
 
   const bRest = [remainingOf(B, B.steps[B.stepIndex]!), ...restOf(B)];
   const projectedRest = bRest.reduce((s, st) => s + route(st, views(), Number.MAX_SAFE_INTEGER).costMicros, 0);
-  const o = overrun({ holdCents: B.hold, spentMicros: clearing.position(B.key).total, projectedRestMicros: projectedRest, depositSpendableMicros: clearing.spendable(B.key) });
+  const o = overrun({ holdCents: B.hold, spentMicros: clearing.spent(B.key), projectedRestMicros: projectedRest, depositSpendableMicros: clearing.spendable(B.key) });
   say.decision(`job ${B.id} budget`, o.action, await explain({ ...o, hold: B.hold }, `Projected ${fmtMicros(o.projectedMicros)} against a hold of ${usd(B.hold / 100)}: raise the hold to ${usd(o.newHoldCents / 100)} first, then top up the deposit by ${fmtMicros(o.topUpMicros)}.`));
   if (o.action === "RAISE_HOLD_THEN_TOP_UP") {
     const t: Terms = { action: "RAISE_CARD_HOLD", amount: o.newHoldCents / 100, currency: "USD", counterparty: B.customer, intent: B.intent, job: B.title, reason: `prompt ${OVERRUN.factor}× budgeted tokens` };
@@ -188,18 +193,19 @@ try {
   }
 
   // Ration the float: top-ups only above the floor; the rest waits for C's withdrawal.
-  const floatMicros = chain.balanceOf(operator) * 10_000;
+  const floatMicros = clearing.floatCents() * 10_000;
   const ration = rationFloat(floatMicros, [{ job: B.id, micros: o.topUpMicros, progress: 0.5 }]);
   const g = ration.grants[0]!;
-  say.decision("float", g.waiting > 0 ? "PARTIAL TOP-UP, REST WAITS" : "TOP UP", `Float ${fmtMicros(floatMicros)}, floor ${fmtMicros(P.floatFloorMicros)}: grant ${fmtMicros(g.micros)} now${g.waiting > 0 ? `; ${fmtMicros(g.waiting)} waits for job C's withdrawal, which is locked until its epoch closes` : ""}.`);
+  say.decision("float", g.waiting > 0 ? "PARTIAL TOP-UP, REST WAITS" : "TOP UP", `Float ${fmtMicros(floatMicros)}, floor ${fmtMicros(P.floatFloorMicros)}: grant ${fmtMicros(g.micros)} now${g.waiting > 0 ? `; ${fmtMicros(g.waiting)} waits for job C's withdrawal, which is locked until ${clearing.mode === "live" ? "Metal finalizes it" : "its epoch closes"}` : ""}.`);
   const grantCents = Math.floor(g.micros / 10_000);
-  if (grantCents > 0) clearing.deposit(operator, B.key, grantCents);
+  if (grantCents > 0) await clearing.deposit(B.key, grantCents);
 
   // ── Finish ───────────────────────────────────────────────────────────────
   say.beat("finish", "Run the drafts and reviews; epochs close as the operator settles them.");
   const reportedWait = new Set<string>();
   let idleEpochs = 0;
-  for (let round = 0; round < 400; round++) {
+  let finalityWaitStarted = 0;
+  for (let round = 0; round < 600; round++) {
     let progressed = false;
     for (const j of jobs.filter((x) => !x.failed && x.stepIndex < x.steps.length)) {
       const r = await advance(j, 5);
@@ -211,32 +217,43 @@ try {
     }
     if (jobs.every((j) => j.failed || j.stepIndex >= j.steps.length)) break;
     if (progressed) idleEpochs = 0;
-    else if (++idleEpochs > 3) {
+    else if (C && clearing.awaitingFinality(C.key)) {
+      // Live clearing: job C's withdrawal can be claimed only once its epoch is final. Wait for it (bounded).
+      // Money leaves clearing after two finalities (balance final → queue → queued withdrawal final → claim),
+      // each after a 5-minute challenge window, so this takes about ten minutes.
+      if (!finalityWaitStarted) { finalityWaitStarted = Date.now(); say.step("job B waits for job C's unspent deposit: Metal releases it after two 5-minute challenge windows (the balance must be final to queue it, then the queued withdrawal must be final to claim it)"); }
+      if (Date.now() - finalityWaitStarted > 15 * 60_000) { say.fail("job C's withdrawal did not come back within 15 minutes: stopping"); break; }
+      await new Promise((r) => setTimeout(r, 15_000));
+      const got = await clearing.claim(C.key);
+      const secs = Math.round((Date.now() - finalityWaitStarted) / 1000);
+      if (got) say.ok(`job C's withdrawal is final and claimed after ${secs} s: float +${fmt(got)}`);
+      else { if (secs % 60 < 15) say.step(`still waiting (${secs} s): ${clearing.withdrawalStage(C.key)}`); continue; }
+    } else if (++idleEpochs > 3) {
       say.fail("no job can progress and the float cannot fund them: stopping");
       break;
     }
     if (!progressed) {
-      clearing.closeEpoch();
-      const claimed = C ? clearing.claim(C.key, operator) : 0;
+      await clearing.nextEpoch();
+      const claimed = C && clearing.mode === "emulated" ? await clearing.claim(C.key) : 0;
       say.ok(`epoch closed → ${clearing.epoch}${claimed ? ` · job C's withdrawal claimed: float +${fmt(claimed)}` : ""}`);
       // Fund whatever job B still needs from the float, above the floor.
       const need = Math.max(0, minCostToFinish([remainingOf(B, B.steps[B.stepIndex] ?? B.steps[B.steps.length - 1]!), ...restOf(B)], views()) - clearing.spendable(B.key) - clearing.pendingDeposits(B.key));
-      const more = rationFloat(chain.balanceOf(operator) * 10_000, [{ job: B.id, micros: need, progress: 0.8 }]).grants[0]!;
+      const more = rationFloat(clearing.floatCents() * 10_000, [{ job: B.id, micros: need, progress: 0.8 }]).grants[0]!;
       const cents = Math.ceil(more.micros / 10_000);
-      if (cents > 0 && chain.balanceOf(operator) * 10_000 - cents * 10_000 >= P.floatFloorMicros) {
-        clearing.deposit(operator, B.key, cents);
+      if (cents > 0 && clearing.floatCents() * 10_000 - cents * 10_000 >= P.floatFloorMicros) {
+        await clearing.deposit(B.key, cents);
         say.step(`topped up job B by ${fmt(cents)} from the float (counts from epoch ${clearing.epoch + 1})`);
       }
     }
   }
-  clearing.closeEpoch();
+  await clearing.nextEpoch();
 
   // ── Settle ───────────────────────────────────────────────────────────────
   say.beat("settle", "Read each job's clearing position, capture once from it (never above the hold), cancel the failed job, withdraw unused deposits.");
   const rows = [];
   for (const j of jobs) {
-    const pos = clearing.position(j.key);
-    const s = settleHold(pos.total, j.hold, j.failed);
+    const spent = clearing.spent(j.key);
+    const s = settleHold(spent, j.hold, j.failed);
     if (s.action === "CAPTURE") {
       const cap = await awx.post(`/pa/payment_intents/${j.intent}/capture`, { request_id: newRequestId(), amount: s.captureCents / 100 });
       say.ok(`job ${j.id}: captured ${usd(s.captureCents / 100)} of a ${usd(j.hold / 100)} hold → ${cap.status}`);
@@ -244,21 +261,26 @@ try {
       const c = await awx.post(`/pa/payment_intents/${j.intent}/cancel`, { request_id: newRequestId(), cancellation_reason: "Report could not be produced" });
       say.ok(`job ${j.id}: hold cancelled → ${c.status}; ${j.customer} pays nothing, the business absorbs ${fmtMicros(s.absorbedMicros)}`);
     }
-    if (!j.failed) clearing.withdraw(j.key);
-    rows.push({ job: j.id, customer: j.customer, status: j.failed ? "FAILED" : j.stepIndex >= j.steps.length ? "DONE" : "UNFINISHED", hold: usd(j.hold / 100), spent: fmtMicros(pos.total), charged: usd(s.captureCents / 100), providers: Object.entries(j.spentByProvider).map(([k, v]) => `${k} ${fmtMicros(v)}`).join(", ") });
+    if (!j.failed) await clearing.withdraw(j.key);
+    rows.push({ job: j.id, customer: j.customer, status: j.failed ? "FAILED" : j.stepIndex >= j.steps.length ? "DONE" : "UNFINISHED", hold: usd(j.hold / 100), spent: fmtMicros(spent), charged: usd(s.captureCents / 100), providers: Object.entries(j.spentByProvider).map(([k, v]) => `${k} ${fmtMicros(v)}`).join(", ") });
   }
-  clearing.closeEpoch();
   let back = 0;
-  for (const j of jobs) back += clearing.claim(j.key, operator);
-  const paidOut = clearing.settleProviders(Object.fromEntries(Object.entries(live).map(([k, v]) => [PROVIDERS.find((p) => p.id === k)!.name, v.payTo])));
-  say.step(`unused deposits withdrawn after the epoch closed: float +${fmt(back)} · providers paid by the operator: ${Object.entries(paidOut).map(([k, v]) => `${k.split(" (")[0]} ${fmt(v)}`).join(", ")}`);
+  if (clearing.mode === "emulated") {
+    await clearing.nextEpoch();
+    for (const j of jobs) back += await clearing.claim(j.key);
+  }
+  const paid = clearing.providerEarnings();
+  const earned = Object.entries(paid.earnings).filter(([, v]) => v > 0).map(([k, v]) => `${k.split(" (")[0]} ${fmtMicros(v)}`).join(", ");
+  say.step(clearing.mode === "live"
+    ? `unused deposits stay in clearing until Metal finalizes them; \`npm run metal:withdraw\` brings them back to the operator (run it again ~5 minutes later to claim) · providers earned: ${earned} (${paid.note})`
+    : `unused deposits withdrawn after the epoch closed: float +${fmt(back)} · providers earned: ${earned} (${paid.note})`);
 
-  say.beat("result", metal.mode === "emulated" ? "Outcome (Metal clearing EMULATED; Airwallex card holds live)." : "Outcome.");
+  say.beat("result", clearing.mode === "emulated" ? "Outcome (Metal clearing EMULATED; Airwallex card holds live)." : "Outcome (Metal clearing live on testnet; Airwallex card holds live).");
   say.table(rows);
   const overHold = rows.some((r, i) => Number(r.charged.replace(/[^\d.]/g, "")) > jobs[i]!.hold / 100);
   const unfinished = rows.filter((r) => r.status === "UNFINISHED").length;
-  say[!overHold && !unfinished ? "ok" : "fail"](`${jobs.filter((j) => !j.failed).length - unfinished} reports delivered, 1 failed and not charged · every hold captured once or cancelled, none above its hold · float back to ${fmt(chain.balanceOf(operator))} of ${fmt(FLOAT_CENTS)} (the rest paid providers)`);
+  say[!overHold && !unfinished ? "ok" : "fail"](`${jobs.filter((j) => !j.failed).length - unfinished} reports delivered, 1 failed and not charged · every hold captured once or cancelled, none above its hold · ${clearing.mode === "live" ? `float ${fmt(clearing.floatCents())} of ${fmt(FLOAT_CENTS)} now, plus unused deposits on their way back` : `float back to ${fmt(clearing.floatCents())} of ${fmt(FLOAT_CENTS)} (the rest paid providers)`}`);
   say.step(`audit log: ${auditPath}`);
 } finally {
-  await Promise.all(sellers.map((s) => s.close()));
+  await cp?.close();
 }
