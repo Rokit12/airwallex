@@ -127,11 +127,13 @@ Check four things in order:
 
 ### Web console
 
-`npm run console` serves the Agent Console at http://localhost:4310. Each run streams the agent's goal, its plan, incoming documents (emails, bank notices, price changes), every decision with its reason, tables, approvals, and the final state read back from Airwallex.
+`npm run console` serves the Agent Console at http://localhost:4310. It opens on an overview of all twelve agents, each marked fully live or partly simulated. Each run shows a strip of what runs live and what is simulated (and why), then streams the agent's goal, its plan, incoming documents (emails, bank notices, price changes), every decision with its reason, tables and approvals, and ends with an outcome card: the result, the decisions made in code, and the approvals a person gave.
 
-| Desktop | Phone, dark mode |
-|---|---|
-| ![Kit 1 plan in the console](docs/images/console-kit1.png) | ![Console on a phone](docs/images/console-phone-dark.png) |
+![Overview of the twelve agents](docs/images/console-overview.png)
+
+| A run, with what's live | The outcome card | Phone, dark mode |
+|---|---|---|
+| ![Kit 1 in the console](docs/images/console-kit1.png) | ![Outcome card at the end of a run](docs/images/console-finished.png) | ![Console on a phone](docs/images/console-phone-dark.png) |
 
 ### Terminal
 
@@ -191,7 +193,7 @@ RAILS=live npm run kit5
    npm run metal:check
    ```
 
-   This confirms the chain (63825), reaches Metal's x402 facilitator, funds a key from the faucet, and makes a real x402 payment to this project's own seller. It prints the transaction and its explorer link. Keys are kept in `.metal/`, which git ignores.
+   This confirms the chain (63825), reaches Metal's x402 facilitator, funds a key from the faucet, and makes a real x402 payment to this project's own seller. Then it binds a spending limit (3 cents a payment), pays 2 cents under it, and has a 4-cent payment refused on chain. It prints each transaction and its explorer link. Keys are kept in `.metal/`, which git ignores. It needs `@metalntwx/metal-agent` 0.3.3 or later, which `npm install` provides.
 
 Faucet limits: ten grants per IP per UTC day, one per minute. Each grant tops an address up to 100 USDZ.
 
@@ -249,12 +251,12 @@ Status on our US sandbox account: **every Airwallex call in all twelve kits runs
 | 6, 7 | Connected accounts, payroll and loan flows, FX and payouts | – (FX and payouts inside connected accounts are routed through the platform account, see below) |
 | 8 | Connected accounts, seller payouts, reserves, refunds | – |
 | 9, 10 | Browser shopping, merchant MCP checkout, live card payments and declines | Airi CLI and Airwallex's merchant-side Agentic Commerce (awaiting access; the test card and local merchant MCP run meanwhile) |
-| 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee | Metal spending limits (binding a mandate reverts on Metal testnet) |
+| 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee | Metal spending limits for the kit's 200+ payments (each on-chain payment takes seconds and faucet-limited gas; `npm run metal:check` proves the same limits live: bind, pay under, refused over) |
 | 12 | Card pre-authorization holds, increments, single captures, cancels | Metal clearing (live adapter not wired yet) |
 
 **FX and payouts inside connected accounts.** Airwallex has not configured fee pricing for FX conversions and payouts made on a connected account's behalf (`unconfigured_client_fee`, `fee_unknown`). Kits 6 and 7 then route those operations through the platform account, live: the customer's own balance is charged, the platform converts or pays out, and converted money goes back to the customer. Each customer's money still only pays for that customer.
 
-On Metal testnet, faucet funding and x402 payments are live: `npm run metal:check` proves it.
+On Metal testnet, faucet funding, x402 payments and spending limits (bind, pay under the cap, refused over it) are live: `npm run metal:check` proves them.
 
 ## Configuration
 

@@ -5,8 +5,10 @@
  * endpoint of your own from https://console-testnet.metalntwx.com, passed as
  * METAL_RPC_URL. With both, plain x402 payments settle on testnet (see
  * src/metal/live-seller.ts and `npm run metal:check`). Spending limits and
- * clearing still run on the Metal emulator (src/metal/emulator.ts): binding a
- * mandate currently reverts on testnet, Metal's own documented example included.
+ * clearing run on the Metal emulator (src/metal/emulator.ts). Spending limits work live on
+ * testnet with metal-agent 0.3.3+ (npm run metal:check binds one, pays under it and is refused
+ * over it), but each on-chain payment takes seconds and gas, and the faucet grants ten a day,
+ * so a kit's hundreds of payments run on the emulator.
  * Every emulated run says why; the Airwallex side always runs live.
  */
 import { MetalChain, Clearing, newAddress } from "./emulator.ts";
@@ -40,7 +42,7 @@ export async function openMetal(withClearing = false) {
   else
     why = withClearing
       ? "Metal testnet is reachable, but this kit's live clearing adapter is not wired yet"
-      : "Metal testnet is reachable and x402 payments settle there, but binding spending limits (mandate bind) currently reverts on testnet for every account, Metal's own example included";
+      : "Metal testnet is reachable and spending limits work there (npm run metal:check proves it), but this kit makes hundreds of payments and each on-chain one takes seconds and gas from a faucet that grants ten a day";
   if (process.env.METAL === "live" || process.env.RAILS === "live") throw new Error(`Metal live required but unavailable: ${why}`);
   say.warn(`Metal testnet: ${why}. Running the Metal side on the Metal emulator (documented limits, refusals, x402 offers${withClearing ? ", clearing epochs" : ""}); Airwallex stays live. Results labelled EMULATED.`);
   audit({ kind: "rail_switch", rail: "metal", to: "emulated", cause: why });

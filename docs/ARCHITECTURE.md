@@ -94,7 +94,7 @@ sequenceDiagram
 | Module | What it does |
 |---|---|
 | `src/metal/live-seller.ts` | A real x402 seller on Metal testnet: the official `@x402/express` middleware with Metal's `exact` scheme (`@metalntwx/metal-pay`), settled by Metal's testnet facilitator. Prices are read on every request. |
-| `src/metal/check.ts` | `npm run metal:check`: chain id, facilitator, faucet, then one real x402 payment to the live seller, paid by `metal-agent` from a separate process. |
+| `src/metal/check.ts` | `npm run metal:check`: chain id, facilitator, faucet, one real x402 payment to the live seller, then a live spending limit: bind, pay under the cap, refused over it (recorded on chain). Uses `metal-agent` 0.3.3+ from a separate process. |
 | `src/metal/emulator.ts` | Metal's documented rules for what is not live yet: accounts, mandates (payees, per-payment cap, lifetime budget, expiry, replace carrying spend), refusals that name the limit and move nothing, payments by id paid at most once, a chain log for `verify`, and clearing (one deposit per key, cumulative signed totals, deposits counted from the next epoch, withdrawals after their epoch). |
 | `src/metal/x402.ts` | Local x402 over HTTP for the emulated rail: `402` offers, payment headers, a facilitator that verifies and settles. |
 | `src/metal/rail.ts` | Opens the Metal rail and states why any part runs on the emulator. |

@@ -25,7 +25,8 @@ These are switches on Airwallex's side. The kits run on emulators in the meantim
 | `This account cannot onboard business accounts` | Kits 5–8 | Connected accounts **and** platform payments |
 | `unconfigured_client_fee` (FX) or `fee_unknown` (transfers) on a connected account | Kits 6, 7 | Fee pricing for FX and payouts inside connected accounts. Meanwhile the kits route these through the platform account, live |
 
-| Metal: `mandate bind` → `would fail: Execution reverted for an unknown reason` | Kit 11 (spending limits) | Reported to Metal: it happens on Metal testnet for every account, their documented example included. Kit 11 runs its limits on the Metal emulator meanwhile |
+| Metal: `mandate bind` → `would fail: Execution reverted for an unknown reason` | Kit 11 (spending limits) | Fixed in `@metalntwx/metal-agent` 0.3.3. Run `npm install` to get it |
+| Metal: `was made by another factory … create a new account with this version` | `npm run metal:check` | Accounts made by metal-agent before 0.3.3 came from an older factory. Delete `.metal/mandate-account.txt` and run again; the check creates a new account |
 
 To check whether a feature is live, run a kit with `RAILS=live`.
 
