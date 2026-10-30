@@ -172,7 +172,7 @@ The guide lists what each kit needs. Kits whose feature isn't enabled on your ac
 | 4 | No extra enablement | None. If confirming a card returns `not enabled for native API access`, ask devhelp@airwallex.com to enable native API access for payments |
 | 5, 7, 8 | Request platform access | Email devhelp@airwallex.com for connected accounts and platform payments |
 | 6 | Platform access + 3 accounts | As above; the kit opens its three employer accounts itself |
-| 9 | Allowlisted Airi CLI access | Create an account at [app.airi.com](https://app.airi.com), then email devhelp@airwallex.com with its email address. Put the three commands from the beta instructions in `AIRI_MANDATE_CMD`, `AIRI_CREDENTIALS_CMD` and `AIRI_REPORT_CMD` |
+| 9 | Allowlisted Airi CLI access | Sign up at [app.airi.com](https://app.airi.com) and ask devhelp@airwallex.com to allowlist that email for the Airi CLI beta. Install it (`npm install -g @airwallex/airi-cli@beta`), sign in (`airi-cli auth login`), pick an agent-enabled card (`airi-cli payment-methods list`) and set `AIRI_PAYMENT_METHOD_ID`. Until Airi's test mode is released, a mandate uses a real card, so the kit uses the sandbox test card unless you set it |
 | 10 | Merchant-side access | Email devhelp@airwallex.com. The kit's own merchant MCP server runs locally meanwhile |
 | 11 | Funded Metal testnet wallet | See [Metal testnet](#metal-testnet-kits-11-and-12) below |
 | 12 | Metal testnet access | See [Metal testnet](#metal-testnet-kits-11-and-12) below |
@@ -252,7 +252,7 @@ Status on our US sandbox account: **every Airwallex call in all twelve kits runs
 | 5 | Connected accounts (KYC, submit, activate), cards issued on each customer's behalf, authorizations, bridge transfers, fee charges | – |
 | 6, 7 | Connected accounts, payroll and loan flows, FX and payouts | – (FX and payouts inside connected accounts are routed through the platform account, see below) |
 | 8 | Connected accounts, seller payouts, reserves, refunds | – |
-| 9, 10 | Browser shopping, merchant MCP checkout, live card payments and declines | Airi CLI and Airwallex's merchant-side Agentic Commerce (awaiting access; the test card and local merchant MCP run meanwhile) |
+| 9, 10 | Browser shopping, merchant MCP checkout, live card payments and declines | Kit 9: Airi CLI card credentials (wired to the real CLI; uses the sandbox test card until Airi releases test mode). Kit 10: Airwallex's merchant-side Agentic Commerce (awaiting access; the local merchant MCP runs meanwhile) |
 | 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee | Metal spending limits for the kit's 200+ payments (each on-chain payment takes seconds and faucet-limited gas; `npm run metal:check` proves the same limits live: bind, pay under, refused over) |
 | 12 | Card pre-authorization holds, increments, single captures, cancels · Metal clearing on testnet: deposits, signed running totals, withdrawals | Nothing when Metal's clearing service is reachable. A live run takes 15–20 minutes because withdrawals wait for Metal's challenge windows; `METAL=emulated` runs it in 30 seconds |
 
@@ -276,14 +276,15 @@ All settings live in `.env` (see [`.env.example`](.env.example)).
 | `DEMO_PACE` | No | Milliseconds to pause between story beats, for recordings |
 | `RAILS` | No | `live` disables the emulator fallback; `emulated` forces it |
 | `PORT`, `STORE_PORT` | No | Console port (4310) and storefront port (4320) |
-| `AIRI_MANDATE_CMD`, `AIRI_CREDENTIALS_CMD`, `AIRI_REPORT_CMD` | No | Airi CLI commands for kit 9, from the Airi beta instructions |
+| `AIRI_PAYMENT_METHOD_ID` | No | Kit 9: the Airi card to pay with (`airi-cli payment-methods list`). Set it to use the Airi CLI instead of the sandbox test card |
+| `AIRI_CLI` | No | Path to `airi-cli` if it is not on your PATH |
 
 Behind a proxy on Node 22+, run with `NODE_USE_ENV_PROXY=1`.
 
 ## Tests
 
 ```sh
-npm test                     # 63 policy tests across all twelve kits
+npm test                     # 64 policy tests across all twelve kits
 npm run typecheck
 npm run verify               # both, as CI runs them
 ```

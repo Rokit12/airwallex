@@ -32,3 +32,12 @@ test("a cheaper, better-rated 3-person tent is rejected: it is not what the shop
   assert.ok(!pick?.offer.name.includes("3-Person"));
   assert.ok(rejected.some((r) => r.sku === "TRL-1005" && /2-person/.test(r.why)));
 });
+
+import { parseCredential } from "../../src/commerce/credentials.ts";
+
+test("an Airi credential file is read whatever its field names, and a missing field stops the payment", () => {
+  assert.deepEqual(parseCredential({ tokenizedPan: "4111 1111 1111 1111", expiry: "7/31", cvv: "321" }), { number: "4111111111111111", expiry_month: "07", expiry_year: "2031", cvc: "321", name: "Airi Shopper" });
+  assert.equal(parseCredential({ credential: { pan: "4111111111111111", expiry: "2031-07", cvc: "321" } }).expiry_month, "07");
+  assert.equal(parseCredential({ number: "4111111111111111", expiryMonth: 7, expiryYear: 2031, securityCode: "321" }).expiry_year, "2031");
+  assert.throws(() => parseCredential({ pan: "4111111111111111", expiry: "07/31" }), /missing a card field/);
+});

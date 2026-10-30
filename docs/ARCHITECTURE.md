@@ -129,7 +129,7 @@ The server streams these to the browser with server-sent events. **Approve** and
 - `catalog.ts`: 120 deterministic synthetic products.
 - `store.ts`: carts, checkouts with idempotency keys, orders. Payments go through Airwallex payment intents (create for the checkout total, confirm with the card from the hosted page).
 - `server.ts`: HTML pages for the browser agent, the hosted payment page, an order-status page used before any retry, and the MCP endpoint at `/mcp`.
-- `credentials.ts`: where the shopping agent gets card credentials: Airi CLI when configured, otherwise the sandbox test card.
+- `credentials.ts`: where the shopping agent gets card credentials: the Airi CLI (mandate → passkey confirmation → single-use credential in an owner-only file → result reported) when `AIRI_PAYMENT_METHOD_ID` is set, otherwise the sandbox test card.
 
 ## Design choices worth knowing
 

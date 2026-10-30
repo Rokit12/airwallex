@@ -111,13 +111,17 @@ try {
   assertApproved(terms, approval);
 
   say.beat("pay", `Shopper authorized payment; get a mandate and one-time credentials from ${provider.name}.`);
-  const mandate = provider.createMandate({ amount: terms.amount, currency: terms.currency, merchant: MERCHANT.name, termsHash: approval.termsHash });
+  const mandate = await provider.createMandate({
+    amount: terms.amount, currency: terms.currency, merchant: MERCHANT.name, merchantUrl: MERCHANT.url, merchantCountry: "US",
+    item: { name: String(terms.product), unitPrice: terms.amount, quantity: 1 }, description: `${terms.product}, ${String(terms.delivery).toLowerCase()} delivery (checkout ${ref})`, termsHash: approval.termsHash,
+  });
   say.step(`mandate ${mandate.id} for ${usd(mandate.amount)} at ${mandate.merchant}, bound to terms ${mandate.termsHash}`);
+  if (mandate.approvalUrl) say.warn(`confirm this payment in Airi with your passkey: ${mandate.approvalUrl} (the agent waits up to 5 minutes)`);
   await page.click("#pay");
   await page.waitForSelector("#paynow");
   const payTotal = await num("#total");
   if (payTotal !== terms.amount) throw new Error(`Payment page shows ${payTotal}, approved ${terms.amount}: stopping`);
-  const card = provider.credentials(mandate); // goes straight into the hosted form; never logged or shown to a model
+  const card = await provider.credentials(mandate); // goes straight into the hosted form; never logged or shown to a model
   await page.fill("#number", card.number);
   await page.fill("#expiry_month", card.expiry_month);
   await page.fill("#expiry_year", card.expiry_year);
@@ -148,7 +152,7 @@ try {
   const attempts = await check.$$eval(".attempt", (els) => els.length);
   const next = afterUnconfirmedSubmit(status);
   say.decision("after submit", next, `Merchant reports ${status}${order ? `, order ${order}` : ""}, ${attempts} payment attempt(s)${confirmed ? "" : " — the timeout was only a slow response"}.`);
-  provider.report(mandate, { status, order });
+  await provider.report(mandate, { status, order });
   say.step(`payment result reported to ${provider.name}: ${status}${order ? ` · ${order}` : ""}`);
 
   say.beat("result", awx.mode.payments === "emulated" ? "Outcome (merchant's card acceptance EMULATED on this account)." : "Outcome.");
