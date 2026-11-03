@@ -82,7 +82,20 @@ npm run setup:browser        # Chromium for kits 9 and 10
 cp .env.example .env
 ```
 
-Open `.env` and fill in `AWX_CLIENT_ID` and `AWX_API_KEY`. Git ignores this file.
+Open `.env` and fill in the keys below. Git ignores this file.
+
+| Key | Where to get it | What it does |
+|---|---|---|
+| `AWX_CLIENT_ID`, `AWX_API_KEY` (required) | Airwallex sandbox: **Account → Developer → API keys**. Use the copy buttons | Every kit's calls to the Airwallex sandbox |
+| `ANTHROPIC_API_KEY` (optional, recommended) | [console.anthropic.com](https://console.anthropic.com) → **API keys** → **Create key** | The model reads the incoming emails, quotes, case notes and statements (kits 1, 3, 4 and others) and explains decisions. Each run says which one read the text: `model: … reads the email` or `rules only` |
+
+```sh
+AWX_CLIENT_ID=your-client-id
+AWX_API_KEY=your-api-key
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+The emails in the kits are sample inputs the agent reads. The project never sends email: escalations and approvals appear in the run and are saved under `runs/`. Without `ANTHROPIC_API_KEY`, deterministic rules extract the same facts from each email and every kit reaches the same decisions, because amounts, limits and approvals are always decided in code.
 
 ### 5. Verify, then fund the sandbox
 
