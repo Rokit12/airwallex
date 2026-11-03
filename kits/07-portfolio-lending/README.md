@@ -12,7 +12,7 @@ A platform funds revenue-based advances. Borrowers repay a share of each week's 
 
 ## Live or emulated
 
-Fully live: borrower connected accounts, revenue deposits, repayment charges and the advance. A borrower's own supplier payment is routed through the platform account (charged to that borrower first) because payouts inside connected accounts are not priced on our account yet.
+Fully live: borrower connected accounts, revenue deposits, repayment charges, the borrower's own supplier payment and the advance. Airwallex applies payout pricing to a new connected account shortly after it is created, so the supplier payment waits and retries (up to `FEE_WAIT_SECONDS`, default 300); only if pricing still hasn't arrived is it routed through the platform account (charged to that borrower first), labelled in the run.
 
 ## Run it
 

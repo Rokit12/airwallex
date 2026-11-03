@@ -23,8 +23,10 @@ export class AwxError extends Error {
     message: string,
     readonly details: unknown,
     readonly path: string,
+    /** Airwallex's x-b3-traceid for the failing call: support asks for it. */
+    readonly traceId?: string,
   ) {
-    super(`${status} ${code}: ${message} (${path})`);
+    super(`${status} ${code}: ${message} (${path})${traceId ? ` [trace ${traceId}]` : ""}`);
   }
 }
 
@@ -127,7 +129,8 @@ export class AirwallexClient {
 
       const text = await res.text();
       const data = safeJson(text);
-      audit({ kind: "call", method, path, onBehalfOf: opts.onBehalfOf, status: res.status, req: opts.body, res: data ?? text.slice(0, 300) });
+      const traceId = res.headers.get("x-b3-traceid") ?? undefined;
+      audit({ kind: "call", method, path, onBehalfOf: opts.onBehalfOf, status: res.status, traceId, req: opts.body, res: data ?? text.slice(0, 300) });
 
       if (res.ok) return data as T;
       if (res.status === 401 && attempt === 1) {
@@ -147,7 +150,7 @@ export class AirwallexClient {
         }
         throw new AwxError(409, "outcome_unknown", `An earlier attempt of ${method} ${path} returned an error but was processed by Airwallex. Check the resource before acting again.`, data, path);
       }
-      throw new AwxError(res.status, data?.code ?? "http_error", data?.message ?? text.slice(0, 200), data?.details ?? data, path);
+      throw new AwxError(res.status, data?.code ?? "http_error", data?.message ?? text.slice(0, 200), data?.details ?? data, path, traceId);
     }
   }
 

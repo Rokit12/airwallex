@@ -16,17 +16,23 @@ export interface Contractor {
 
 export interface PayrollPolicy {
   swiftFee: Partial<Record<Ccy, number>>;
+  /**
+   * Extra converted per SWIFT payout, in the payout currency. The documented flat SWIFT fee is 12.85,
+   * but the sandbox has charged 13.40–13.48 (13.48 inside a connected account): convert a little more
+   * so the payout is never short. What is left stays in the employer's own wallet.
+   */
+  swiftFeeBuffer: number;
   /** Platform fee per contractor paid, in USD. */
   feePerContractor: number;
   /** Advances from the platform's own capital always need a person. */
   maxAdvance: number;
 }
 
-export const DEFAULT_PAYROLL_POLICY: PayrollPolicy = { swiftFee: { EUR: 12.85, GBP: 12.85, USD: 15 }, feePerContractor: 25, maxAdvance: 1000 };
+export const DEFAULT_PAYROLL_POLICY: PayrollPolicy = { swiftFee: { EUR: 12.85, GBP: 12.85, USD: 15 }, swiftFeeBuffer: 1, feePerContractor: 25, maxAdvance: 1000 };
 
 export interface PricedLine extends Contractor {
   fee: number;
-  /** Amount needed in the payout currency, including the SWIFT fee. */
+  /** Amount needed in the payout currency, including the SWIFT fee and its buffer. */
   needed: number;
   /** USD needed to fund it (conversion at the given rate). */
   usd: number;
@@ -37,7 +43,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 export function price(contractors: Contractor[], usdPer: Record<Ccy, number>, p: PayrollPolicy = DEFAULT_PAYROLL_POLICY): PricedLine[] {
   return contractors.map((c) => {
     const fee = c.method === "SWIFT" ? (p.swiftFee[c.currency] ?? 0) : 0;
-    const needed = r2(c.amount + fee);
+    const needed = r2(c.amount + (c.method === "SWIFT" ? fee + p.swiftFeeBuffer : 0));
     return { ...c, fee, needed, usd: c.currency === "USD" ? needed : r2(needed * usdPer[c.currency]) };
   });
 }

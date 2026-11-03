@@ -9,9 +9,10 @@ const plan = (k: string, bal?: number) => {
   return planEmployer(e.key, bal ?? e.deposit, price(e.contractors, rates));
 };
 
-test("SWIFT fees are priced before converting", () => {
+test("SWIFT fees are priced before converting, with a buffer for the fee Airwallex actually charges", () => {
   const l = price(EMPLOYERS[0]!.contractors, rates)[0]!;
-  assert.equal(l.needed, 4012.85);
+  assert.equal(l.fee, 12.85);
+  assert.equal(l.needed, 4013.85, "4,000 + the documented 12.85 + a 1.00 buffer (13.48 was charged in a connected account)");
 });
 
 test("Atlas covers its own payroll", () => {

@@ -250,13 +250,13 @@ Status on our US sandbox account: **every Airwallex call in all twelve kits runs
 | 2 | Virtual card issuing, card controls, authorizations and declines | – |
 | 4 | Payments, real disputes (accept, challenge, escalate, resolve), evidence uploads | – |
 | 5 | Connected accounts (KYC, submit, activate), cards issued on each customer's behalf, authorizations, bridge transfers, fee charges | – |
-| 6, 7 | Connected accounts, payroll and loan flows, FX and payouts | – (FX and payouts inside connected accounts are routed through the platform account, see below) |
+| 6, 7 | Connected accounts, payroll and loan flows, FX and payouts inside each customer's own account | – |
 | 8 | Connected accounts, seller payouts, reserves, refunds | – |
 | 9, 10 | Browser shopping, merchant MCP checkout, live card payments and declines | Kit 9: Airi CLI card credentials (wired to the real CLI; uses the sandbox test card until Airi releases test mode). Kit 10: Airwallex's merchant-side Agentic Commerce (awaiting access; the local merchant MCP runs meanwhile) |
 | 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee | Metal spending limits for the kit's 200+ payments (each on-chain payment takes seconds and faucet-limited gas; `npm run metal:check` proves the same limits live: bind, pay under, refused over) |
 | 12 | Card pre-authorization holds, increments, single captures, cancels · Metal clearing on testnet: deposits, signed running totals, withdrawals | Nothing when Metal's clearing service is reachable. A live run takes 15–20 minutes because withdrawals wait for Metal's challenge windows; `METAL=emulated` runs it in 30 seconds |
 
-**FX and payouts inside connected accounts.** Airwallex has not configured fee pricing for FX conversions and payouts made on a connected account's behalf (`unconfigured_client_fee`, `fee_unknown`). Kits 6 and 7 then route those operations through the platform account, live: the customer's own balance is charged, the platform converts or pays out, and converted money goes back to the customer. Each customer's money still only pays for that customer.
+**FX and payouts inside new connected accounts.** Airwallex applies FX and payout pricing to a connected account a little while after it is created; until then those calls are refused with `unconfigured_client_fee` or `fee_unknown`. We measured FX pricing after about 2 minutes and payout pricing after 30 seconds to 3 minutes. Kits 6 and 7 open fresh accounts on each run, so they retry with backoff (up to `FEE_WAIT_SECONDS`, default 300) and then run inside the customer's own account. If pricing still hasn't arrived by then, they fall back to routing that call through the platform account (the customer's own balance is charged first, so funds are never mixed) and the run says so.
 
 On Metal testnet, faucet funding, x402 payments and spending limits (bind, pay under the cap, refused over it) are live: `npm run metal:check` proves them. Kit 12's clearing runs live on testnet too; `npm run metal:withdraw` brings unspent clearing deposits back to the operator after Metal finalizes them.
 
@@ -278,6 +278,7 @@ All settings live in `.env` (see [`.env.example`](.env.example)).
 | `PORT`, `STORE_PORT` | No | Console port (4310) and storefront port (4320) |
 | `AIRI_PAYMENT_METHOD_ID` | No | Kit 9: the Airi card to pay with (`airi-cli payment-methods list`). Set it to use the Airi CLI instead of the sandbox test card |
 | `AIRI_CLI` | No | Path to `airi-cli` if it is not on your PATH |
+| `FEE_WAIT_SECONDS` | No | Kits 6–7: how long to wait for Airwallex to apply FX and payout pricing to a new connected account before routing through the platform (default 300) |
 
 Behind a proxy on Node 22+, run with `NODE_USE_ENV_PROXY=1`.
 

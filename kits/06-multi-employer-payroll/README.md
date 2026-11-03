@@ -13,7 +13,7 @@ Weekly contractor payroll in USD, EUR and GBP for three employers, each a connec
 
 ## Live or emulated
 
-Fully live: three employer connected accounts, payroll funding, a platform advance, FX and contractor payouts in EUR, USD and GBP. Airwallex has not configured fee pricing for FX and payouts inside connected accounts on our account, so those are routed through the platform account, live: the employer's own balance is charged, the platform converts or pays the contractor, and converted money returns to that employer. No employer's money ever pays for another.
+Fully live: three employer connected accounts, payroll funding, a platform advance, FX and contractor payouts in EUR, USD and GBP, all inside each employer's own account. Airwallex applies FX and payout pricing to a new connected account a couple of minutes after it is created, so the first FX call waits and retries (up to `FEE_WAIT_SECONDS`, default 300); only if pricing still hasn't arrived does that call go through the platform account, labelled in the run. SWIFT payouts convert a 1.00 buffer over the documented 12.85 fee, because Airwallex charged 13.48 inside a connected account; the rest stays in the employer's wallet.
 
 ## Run it
 

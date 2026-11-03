@@ -34,7 +34,8 @@ export class PlatformClient extends AirwallexClient {
   private readonly beneficiaryBodies = new Map<string, unknown>();
   /** Transfers that were paid out from the platform account for a customer: id → customer. */
   private readonly rerouted = new Map<string, string>();
-  private routeViaPlatform = false;
+  /** FX conversions and/or payouts that go through the platform for this run (pricing not yet on customer accounts). */
+  private readonly routeViaPlatform = new Set<string>();
   /** Set when Airwallex's authorization simulator refuses this account. */
   private authEmulated = process.env.RAILS === "emulated";
 
@@ -55,7 +56,7 @@ export class PlatformClient extends AirwallexClient {
     if (this.mode === "live") {
       const t = path.match(/^\/(?:simulation\/)?transfers\/([\w-]+)/);
       if (t && this.rerouted.has(t[1]!)) return super.call<T>(method, path, { ...opts, onBehalfOf: undefined });
-      if (this.routeViaPlatform && opts.onBehalfOf && method === "POST" && (path === "/fx/conversions/create" || path === "/transfers/create")) return this.viaPlatform<T>(path, opts);
+      if (this.routeViaPlatform.has(path) && opts.onBehalfOf && method === "POST") return this.viaPlatform<T>(path, opts);
     }
     try {
       const res = await super.call<T>(method, path, opts);
@@ -63,11 +64,28 @@ export class PlatformClient extends AirwallexClient {
       return res;
     } catch (err) {
       if (err instanceof AwxError && FEE_UNCONFIGURED.has(err.code) && opts.onBehalfOf && method === "POST" && (path === "/fx/conversions/create" || path === "/transfers/create")) {
-        if (!this.routeViaPlatform) {
-          this.routeViaPlatform = true;
-          say.warn(`Airwallex has not configured FX and payout pricing inside connected accounts (${err.code}). Routing each customer's FX and payouts through the platform, live: the customer's own balance is charged, the platform converts or pays out, and converted money goes back to the customer. Customer funds are still never mixed.`);
-          audit({ kind: "rail_switch", rail: "connected_account_fx_payouts", to: "via_platform", cause: err.message });
+        // Airwallex applies pricing to a new connected account a while after it is created (measured:
+        // FX after ~2.2 min, payouts after ~3.2 min). The call was refused, so nothing happened: retry with backoff
+        // and a fresh request_id, then fall back to routing through the platform.
+        const what = path === "/fx/conversions/create" ? "FX" : "payout";
+        const budgetMs = Number(process.env.FEE_WAIT_SECONDS ?? 300) * 1000;
+        say.step(`Airwallex has not applied ${what} pricing to this new customer account yet (${err.code}, trace ${err.traceId ?? "n/a"}); retrying for up to ${Math.round(budgetMs / 1000)} s`);
+        const start = Date.now();
+        for (let wait = 10_000; Date.now() - start + wait <= budgetMs; wait = Math.min(wait * 2, 60_000)) {
+          await sleep(wait);
+          try {
+            const body = { ...(opts.body as object), request_id: newRequestId() };
+            const res = await super.call<T>(method, path, { ...opts, body });
+            say.ok(`${what} pricing is now on the customer account (after ${Math.round((Date.now() - start) / 1000)} s): ${what} runs inside the customer's own account`);
+            audit({ kind: "fee_pricing_ready", path, onBehalfOf: opts.onBehalfOf, afterMs: Date.now() - start });
+            return res;
+          } catch (again) {
+            if (!(again instanceof AwxError && FEE_UNCONFIGURED.has(again.code))) throw again;
+          }
         }
+        this.routeViaPlatform.add(path);
+        say.warn(`${what} pricing is still not on the new customer accounts (${err.code}). Routing each customer's ${what === "FX" ? "FX" : "payouts"} through the platform, live: the customer's own balance is charged, the platform ${what === "FX" ? "converts" : "pays out"}, and ${what === "FX" ? "the converted money goes back to the customer" : "the customer's payee is paid"}. Customer funds are still never mixed.`);
+        audit({ kind: "rail_switch", rail: `connected_account_${what.toLowerCase()}`, to: "via_platform", cause: err.message });
         return this.viaPlatform<T>(path, opts);
       }
       if (err instanceof AwxError && path === "/accounts/create" && /cannot onboard/i.test(err.message) && process.env.RAILS !== "live") {
