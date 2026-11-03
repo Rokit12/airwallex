@@ -82,7 +82,8 @@ sequenceDiagram
 | `emulator.ts` | Card issuing and payment acceptance, following documented rules: inclusive per-transaction limits, cumulative monthly limits, decline reasons, documented decline test cards, dispute stage transitions. |
 | `platform-emulator.ts` | Per-account wallets, `x-on-behalf-of`, connected-account transfers and charges that settle after creation, the three insufficient-funds codes, SWIFT fees, on-behalf transfers that stay PROCESSING until simulated. |
 | `sandbox.ts` | Every sandbox-only simulation (deposits, card authorizations, transfer transitions, disputes) behind one interface. Treats a 5xx on a transition as unconfirmed and re-reads. |
-| `approval.ts` | An approval is a SHA-256 hash of the exact terms shown. `assertApproved` throws if anything changed since. Works in the terminal, in the console, or unattended with `APPROVE=yes`. |
+| `approval.ts` | An approval is a SHA-256 hash of the exact terms shown. `assertApproved` throws if anything changed since. Works in the terminal, in the console, or unattended with `APPROVE=yes`. It also throws if the approver is the proposing agent: only a person approves. |
+| `untrusted.ts` | Flags instructions hidden in text the agent reads (emails, case notes, forwarded statements). Flagging is for the run and the audit log; nothing in the text can change an amount, account, action or approval. |
 | `lock.ts` | One lock per obligation (invoice, payroll line). Written before the API call with the `request_id`, so a crash can be recovered by asking Airwallex about that `request_id` instead of paying again. |
 | `llm.ts` | Optional Claude calls: extract structured facts from text (validated against a type guard) and explain decisions in plain language. Without `ANTHROPIC_API_KEY`, deterministic rules give the same decisions. |
 | `audit.ts` | Appends every API call, decision and approval to `runs/kitNN-<time>.jsonl`, with card numbers, CVCs and tokens redacted. |

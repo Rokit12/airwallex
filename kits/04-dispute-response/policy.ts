@@ -140,3 +140,17 @@ export function decide(f: DisputeFacts, cfg: PolicyConfig = DEFAULT_POLICY): Dec
     rationale: `Defending costs more than it saves: challenge ${costChallenge} vs accept ${costAccept} (win p=${p}).`,
   };
 }
+
+const EVIDENCE_KEYS = ["priorOrdersSameDevice", "ipMatchesPriorOrders", "deliveryScanned", "deliverySigned", "unansweredSupportContacts", "refundAlreadyIssued"] as const;
+
+/**
+ * What the model may return when it reads case notes: exactly these evidence fields, nothing else.
+ * No amounts, accounts, actions or approvals can come out of the text the agent reads.
+ */
+export function isEvidence(v: any): v is Evidence {
+  return Boolean(v) && typeof v === "object" && !Array.isArray(v)
+    && Object.keys(v).length === EVIDENCE_KEYS.length && Object.keys(v).every((k) => (EVIDENCE_KEYS as readonly string[]).includes(k))
+    && typeof v.priorOrdersSameDevice === "number" && typeof v.unansweredSupportContacts === "number"
+    && ["ipMatchesPriorOrders", "deliveryScanned", "deliverySigned", "refundAlreadyIssued"].every((k) => typeof v[k] === "boolean");
+}
+

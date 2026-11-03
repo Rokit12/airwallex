@@ -326,7 +326,7 @@ function render(ev, { interactive, evs = [] }) {
     case "approval_request":
       el.className = "ev approval";
       el.id = `ap-${ev.id}`;
-      el.innerHTML = `<div class="eyebrow" style="color:var(--accent)">Approval needed</div><div class="ctx">${esc(ev.context)}</div>${termsList(ev.terms)}
+      el.innerHTML = `<div class="eyebrow" style="color:var(--accent)">Approval needed · proposed by the agent, approved only by a person</div><div class="ctx">${esc(ev.context)}</div>${termsList(ev.terms)}
         <div class="foot"><span class="hash">bound to terms hash ${esc(ev.termsHash)}</span>
         <span class="controls" data-slot>${interactive ? `<button class="btn decline" data-no>Decline</button><button class="btn approve" data-yes>Approve these terms</button>` : `<span class="pill warn">Waiting…</span>`}</span></div>`;
       if (interactive) {

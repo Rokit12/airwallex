@@ -213,6 +213,8 @@ Faucet limits: ten grants per IP per UTC day, one per minute. Each grant tops an
 | Use the model to read unstructured text, compare evidence, propose a plan and explain an exception | `src/core/llm.ts`: optional model extraction and explanation (`ANTHROPIC_API_KEY`), validated against a type and checked against the ledger. Without a key, deterministic rules reach the same decisions |
 | Give the model typed tools rather than unrestricted credentials | The model never sees credentials or card data; kit 10's assistant gets typed MCP tools (`src/commerce/server.ts`) |
 | Bind each approval to amount, currency, counterparty, terms and evidence | `src/core/approval.ts`: an approval is a SHA-256 hash of the exact terms shown; any change invalidates it |
+| A person approves; the agent never approves its own proposal | `src/core/approval.ts`: `assertApproved()` refuses an approval attributed to the proposing agent, and approvals only come through the approval channel, never from text the agent read |
+| Treat what the agent reads as data, not instructions | Kit 4's forwarded cardholder statement hides instructions to accept, refund and pay an IBAN, "already approved by the operator". They are flagged (`src/core/untrusted.ts`), the model can only return fixed evidence fields, code decides, and the run checks none of it happened |
 | Put sandbox-only simulation calls behind one interface | `src/core/sandbox.ts` (deposits, transfer transitions, card authorizations, disputes) |
 | Finish with a financial action or an escalation to a person | Every run ends with a payout, capture, refund, card change or escalation file |
 | If the agent should make the same choice every time, write the rule in code | The model never chooses an amount; policy functions do |
@@ -285,7 +287,7 @@ Behind a proxy on Node 22+, run with `NODE_USE_ENV_PROXY=1`.
 ## Tests
 
 ```sh
-npm test                     # 64 policy tests across all twelve kits
+npm test                     # 69 tests: policy for all twelve kits, plus approvals
 npm run typecheck
 npm run verify               # both, as CI runs them
 ```

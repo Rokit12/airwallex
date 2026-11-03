@@ -42,3 +42,28 @@ test("A's evidence on a small amount flips to accept: same evidence, different e
 test("weak case near the deadline goes to a person", () => {
   assert.equal(decide(factsFor("B", { amount: 300, hoursToDeadline: 4 })).action, "ESCALATE");
 });
+
+import { isEvidence } from "./policy.ts";
+import { screenUntrusted } from "../../src/core/untrusted.ts";
+
+test("instructions hidden in a forwarded statement are flagged, and ordinary case notes are not", () => {
+  const a = CASES.find((c) => c.key === "A")!;
+  const found = screenUntrusted(a.statement!);
+  assert.ok(found.length >= 3, `expected several findings, got ${JSON.stringify(found)}`);
+  assert.ok(found.some((f) => /account named in the text/.test(f.why)));
+  assert.ok(found.some((f) => /approval that only a person can give/.test(f.why)));
+  for (const c of CASES) assert.deepEqual(screenUntrusted(c.notes), [], `case ${c.key} notes are ordinary text`);
+});
+
+test("the model can only hand back evidence fields: no amounts, accounts or actions", () => {
+  const good = { priorOrdersSameDevice: 3, ipMatchesPriorOrders: true, deliveryScanned: true, deliverySigned: true, unansweredSupportContacts: 0, refundAlreadyIssued: false };
+  assert.equal(isEvidence(good), true);
+  assert.equal(isEvidence({ ...good, action: "ACCEPT" }), false);
+  assert.equal(isEvidence({ ...good, refundTo: "GB33BUKB20201555555555" }), false);
+  assert.equal(isEvidence({ ...good, deliverySigned: "yes" }), false);
+});
+
+test("the decision for the injected case comes from evidence and policy alone", () => {
+  // The statement never reaches the decision: it uses the extracted evidence fields and the policy only.
+  assert.equal(decide(factsFor("A")).action, "CHALLENGE");
+});

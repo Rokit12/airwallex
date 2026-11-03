@@ -24,7 +24,7 @@
     "record": "tsx src/console/record.ts",
     "build:replay": "tsx src/console/build-replay.ts",
     "setup:browser": "playwright install chromium",
-    "test": "tsx --test kits/*/policy.test.ts",
+    "test": "tsx --test kits/*/policy.test.ts src/core/*.test.ts",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm test",
     "metal:withdraw": "tsx src/metal/withdraw.ts"
