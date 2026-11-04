@@ -10,11 +10,27 @@ Twelve finance agents for **Trailhead Outfitters LLC**, a US business, built on 
 
 **[Watch the demo video (4:57)](https://drive.google.com/file/d/1218Uh4_Xp9PMt1SWIDUY2EpOCkHewipg/view?usp=sharing)**. It shows all twelve kits running against the Airwallex sandbox in the Agent Console, each followed by the same activity in the Airwallex dashboard and inbox.
 
+## Try it live
+
+The Agent Console is hosted on AWS, served through **Amazon CloudFront**: **[https://d1zoxhgak5pvwd.cloudfront.net/](https://d1zoxhgak5pvwd.cloudfront.net/)**
+
+| Judge sign-in | |
+|---|---|
+| Email | `judge@airwallex.com` |
+| Password | `Airwallex26!` |
+
+1. Open the link. You are taken to the Amazon Cognito sign-in page.
+2. Sign in with the details above. You return to the console, marked "Approver: judge@airwallex.com".
+3. Pick any kit and press **Run agent**. When the agent asks for approval, review the exact terms and press **Approve these terms**, or decline. The approval is recorded under the judge account.
+
+Every run moves money in the Airwallex sandbox only. One kit runs at a time, so if someone else's run is in progress, wait for it to finish.
+
 ![The Agent Console stopping a run for approval of exact payment terms](docs/images/console-approval.png)
 
 ## Contents
 
 - [Demo video](#demo-video)
+- [Try it live](#try-it-live)
 - [Submission at a glance](#submission-at-a-glance)
 - [The agents](#the-agents)
 - [Quick start](#quick-start)
@@ -33,7 +49,7 @@ Twelve finance agents for **Trailhead Outfitters LLC**, a US business, built on 
 
 | Requirement | Where |
 |---|---|
-| **Working demo** | `npm run console`, then open http://localhost:4310 and run any kit against your own sandbox ([Quick start](#quick-start)). Without credentials, open `preview/agent-console.html`, which replays recorded runs of all twelve kits. |
+| **Working demo** | Hosted: [https://d1zoxhgak5pvwd.cloudfront.net/](https://d1zoxhgak5pvwd.cloudfront.net/), signing in as `judge@airwallex.com` / `Airwallex26!` ([Try it live](#try-it-live)). Locally: `npm run console`, then open http://localhost:4310 and run any kit against your own sandbox ([Quick start](#quick-start)). Without credentials, open `preview/agent-console.html`, which replays recorded runs of all twelve kits. |
 | **Video under 5 minutes** | [Demo video (4:57)](https://drive.google.com/file/d/1218Uh4_Xp9PMt1SWIDUY2EpOCkHewipg/view?usp=sharing): a walkthrough of all twelve kits running in the console. |
 | **Repository with setup instructions** | This README: [Quick start](#quick-start), [Kit setup and enablement](#kit-setup-and-enablement), [Troubleshooting](docs/TROUBLESHOOTING.md). |
 | **Uses Airwallex APIs** | Every kit calls the Airwallex sandbox REST API: authentication, balances, Global Accounts, simulated deposits, FX rates, quotes and conversions, beneficiaries, transfers and transfer simulations, card issuing (cardholders, cards, controls, transactions), payment intents (confirm, pre-authorization, increment, capture, cancel), disputes and dispute simulations, file uploads, connected accounts. Each run writes every call to an audit log in `runs/`. |
@@ -185,9 +201,9 @@ Then ask, for example: "Find me a set of insulated water bottles under $85 with 
 
 ## Hosted on AWS
 
-The same twelve kits also deploy to **Amazon Bedrock AgentCore Runtime**, with Claude on **Amazon Bedrock** as the model. The deployment follows the pattern of Airwallex's AWS reference builds for kits 1 to 8.
+The same twelve kits are hosted on **Amazon Bedrock AgentCore Runtime** at [https://d1zoxhgak5pvwd.cloudfront.net/](https://d1zoxhgak5pvwd.cloudfront.net/) (judge sign-in under [Try it live](#try-it-live)), with Claude on **Amazon Bedrock** as the model. The deployment follows the pattern of Airwallex's AWS reference builds for kits 1 to 8.
 
-- **The console:** operators sign in with Amazon Cognito. The page is served from CloudFront, and an API Gateway + Lambda layer forwards to the runtime, which has no public endpoint.
+- **The console:** the page is served from a private S3 bucket through Amazon CloudFront (HTTPS, security headers). Operators sign in with Amazon Cognito, which has no self sign-up. API Gateway checks each request's sign-in token, then a Lambda forwards it to the runtime, which has no public endpoint.
 - **Approvals:** recorded under the signed-in person, taken from the verified token. An approval can never come from the agent.
 - **Credentials:** the sandbox keys live in Secrets Manager, and the runtime calls the model through its IAM role, so no model key is stored anywhere.
 - **Cost:** a USD 100 monthly budget alert guards spend.
