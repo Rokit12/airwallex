@@ -25,9 +25,10 @@ export const KITS: KitInfo[] = [
   { id: "07", name: "Portfolio Lending Agent", track: "Dynamic Lending", script: "kits/07-portfolio-lending/run.ts", summary: "Collect revenue-based repayments and size an advance above the reserve floor." },
   { id: "08", name: "Marketplace Settlement Agent", track: "Multi-Tenant Platforms", script: "kits/08-marketplace-settlement/run.ts", summary: "Set seller reserves, pay net proceeds, and re-reserve when risk changes." },
   { id: "09", name: "Approval-Bound Shopping Agent", track: "Agentic Commerce", script: "kits/09-approval-bound-shopping/run.ts", summary: "Shop a merchant site in a browser and pay only for the exact approved terms." },
-  { id: "10", name: "Merchant-Enabled Agentic Checkout", track: "Agentic Commerce", script: "kits/10-merchant-agentic-checkout/run.ts", summary: "Sell through Claude with merchant MCP tools and a hosted payment page." },
+  { id: "10", name: "Merchant-Enabled Agentic Checkout", track: "Agentic Commerce", script: "kits/10-merchant-agentic-checkout/run.ts", summary: "Sell through an AI assistant on Airwallex Agentic Commerce: merchant catalogue, checkout and payment." },
   { id: "11", name: "x402 Business Agents", track: "Agent Payments", script: "kits/11-x402-business-agents/run.ts", summary: "Three agents share 20 *USDZ; move their limits when a supplier's price rises, and resolve a disputed batch." },
   { id: "12", name: "Inference Sourcing Agent", track: "Inference Sourcing", script: "kits/12-inference-sourcing/run.ts", summary: "Buy every AI step at the live price; reroute and ration the float when budgets or speed change." },
+  { id: "13", name: "Cash Placement & Reconciliation", track: "Treasury & Ops", script: "kits/13-cash-reconciliation/run.ts", summary: "Match every payment to its invoice, explain every cent, and place only identified cash." },
 ];
 
 export type KitEvent = Record<string, unknown> & { type: string; t: number; seq?: number };

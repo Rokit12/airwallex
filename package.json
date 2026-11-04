@@ -34,7 +34,8 @@
     "aws:deploy": "npm run aws:build && cdk deploy --app \"tsx infra/app.ts\" --all --outputs-file infra/outputs.json",
     "aws:seed": "tsx scripts/aws-seed-secret.ts",
     "aws:operator": "tsx scripts/aws-add-operator.ts",
-    "aws:merchant": "tsx scripts/aws-merchant.ts"
+    "aws:merchant": "tsx scripts/aws-merchant.ts",
+    "kit13": "tsx kits/13-cash-reconciliation/run.ts"
   },
   "license": "MIT",
   "devDependencies": {

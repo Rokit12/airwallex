@@ -219,6 +219,7 @@ const KIT_FALLBACK = [
   { id: "10", name: "Merchant-Enabled Agentic Checkout", track: "Agentic Commerce", summary: "Sell through an AI assistant on Airwallex Agentic Commerce: merchant catalogue, checkout and payment." },
   { id: "11", name: "x402 Business Agents", track: "Agent Payments", summary: "Three agents share 20 *USDZ; move their limits when a supplier's price rises, and resolve a disputed batch." },
   { id: "12", name: "Inference Sourcing Agent", track: "Inference Sourcing", summary: "Buy every AI step at the live price; reroute and ration the float when budgets or speed change." },
+  { id: "13", name: "Cash Placement & Reconciliation", track: "Treasury & Ops", summary: "Match every payment to its invoice, explain every cent, and place only identified cash." },
 ];
 
 /* What each agent decides, and what runs live or simulated (and why). */
@@ -235,6 +236,7 @@ const DECIDES = {
   "10": "Sell through an AI assistant with the merchant's MCP tools and a hosted payment page.",
   "11": "Three agents share 20 *USDZ: whose limits move when a supplier's price rises, and which disputed charges to refund.",
   "12": "Which provider each AI step is bought from, and how card holds and a short float stretch when a job overruns.",
+  "13": "Which invoice each payment settles, what is owed back or quarantined, and where today's identified cash goes.",
 };
 const RAILS = {
   "01": { live: "Airwallex: balances, FX quotes and conversions, beneficiaries, SWIFT and US payouts, deposits" },
@@ -249,6 +251,7 @@ const RAILS = {
   "10": { live: "Airwallex Agentic Commerce: the merchant is onboarded, its 120 products are in Airwallex's catalogue, and the shopper buys through Airwallex's merchant MCP endpoint. The merchant's Create Checkout endpoint, OAuth server and payment webhook run on AWS. Card payments, the declined card and the retry are live" },
   "11": { live: "Airwallex: deposit credited by Metal transaction, FX to EUR, SWIFT licence fee · Metal testnet x402 payments (npm run metal:check)", sim: "Metal mandates (spending limits) and on-chain refusals", why: "200+ on-chain payments are too slow and gas-limited for a demo; the same limits are proven live by npm run metal:check" },
   "12": { live: "Airwallex: card pre-authorization holds, increments, single captures, cancels · Metal clearing on testnet: deposits, signed running totals, withdrawals", note: "A live run takes 15–20 minutes: Metal releases withdrawals after two 5-minute challenge windows. METAL=emulated runs it in 30 seconds." },
+  "13": { live: "Airwallex: deposits read back from the statement, beneficiary schema and validation, the refund payout, FX quote and conversion for the placement" },
 };
 const partlySimulated = (id) => Boolean(RAILS[id]?.sim);
 
@@ -459,7 +462,7 @@ function showOverview() {
   renderKits();
   renderHeadChips();
   renderRails(null);
-  $("runTrack").textContent = "Twelve agents · one per starter kit";
+  $("runTrack").textContent = "Thirteen agents · the twelve starter kits plus cash reconciliation";
   $("runName").textContent = "Airwallex Agent Desk";
   $("runSub").textContent = "Trailhead Outfitters LLC · United States of America · USD";
   $("runControls").innerHTML = "";
