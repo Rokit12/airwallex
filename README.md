@@ -1,6 +1,6 @@
 # Airwallex Agent Desk
 
-Thirteen finance agents for **Trailhead Outfitters LLC**, a US business, built on the [Airwallex](https://www.airwallex.com) sandbox for the [Airwallex agentic banking hackathon](https://airwallexdev.com). One agent per starter kit, kits 1 to 12, plus a thirteenth for the territory the guide left open: cash placement and reconciliation. Each agent makes a financial decision, changes it when a balance, deadline, piece of evidence or risk changes, and then moves money or hands the decision to a person.
+Fifteen finance agents for **Trailhead Outfitters LLC**, a US business, built on the [Airwallex](https://www.airwallex.com) sandbox for the [Airwallex agentic banking hackathon](https://airwallexdev.com). One agent per starter kit, kits 1 to 12, plus three for the gaps: cash placement and reconciliation (the territory the guide left open), failed-payment recovery (Revenue Protection) and expense policy (Expense & Policy), the two tracks with one kit each. Each agent makes a financial decision, changes it when a balance, deadline, piece of evidence or risk changes, and then moves money or hands the decision to a person.
 
 **Sandbox only. No real money.** All names, accounts and products are synthetic. This is not official Airwallex documentation.
 
@@ -71,6 +71,8 @@ Every run moves money in the Airwallex sandbox only. One kit runs at a time, so 
 | [11](kits/11-x402-business-agents/README.md) | Agent Payments | x402 Business Agents | Three agents sharing 20 *USDZ: whose limits move, and from where, when a supplier's price rises; which disputed charges to refund |
 | [12](kits/12-inference-sourcing/README.md) | Inference Sourcing | Inference Sourcing Agent | Which provider each AI step is bought from, and how card holds and a short float stretch when a job overruns |
 | [13](kits/13-cash-reconciliation/README.md) | Treasury & Ops | Cash Placement & Reconciliation | Which invoice each payment settles, what is owed back or quarantined, and where today's identified cash goes |
+| [14](kits/14-payment-recovery/README.md) | Revenue Protection | Failed-Payment Recovery | Which failed renewals to retry and when, and which customers to ask for a new card or pause, from the issuer's response code |
+| [15](kits/15-expense-policy/README.md) | Expense & Policy | Expense Policy Agent | Which card spend is backed and within policy, what the employee owes back, and what to reimburse |
 
 Every run shows the five parts the guide asks for: the **goal**, the agent's **plan**, the **new information**, the **revised decision**, and the resulting **balance, payment or status**.
 
@@ -165,7 +167,7 @@ Check four things in order:
 
 ### Web console
 
-`npm run console` serves the Agent Console at http://localhost:4310. It opens on an overview of all thirteen agents, each marked fully live or partly simulated. Each run shows a strip of what runs live and what is simulated (and why), then streams the agent's goal, its plan, incoming documents (emails, bank notices, price changes), every decision with its reason, tables and approvals, and ends with an outcome card: the result, the decisions made in code, and the approvals a person gave.
+`npm run console` serves the Agent Console at http://localhost:4310. It opens on an overview of all fifteen agents, each marked fully live or partly simulated. Each run shows a strip of what runs live and what is simulated (and why), then streams the agent's goal, its plan, incoming documents (emails, bank notices, price changes), every decision with its reason, tables and approvals, and ends with an outcome card: the result, the decisions made in code, and the approvals a person gave.
 
 ![Overview of the twelve agents](docs/images/console-overview.png)
 
@@ -185,7 +187,7 @@ Approval prompts wait for your answer in the terminal (type `y` and press Enter)
 ### Run everything
 
 ```sh
-APPROVE=yes npm run record   # runs all thirteen kits end to end, approving automatically
+APPROVE=yes npm run record   # runs all fifteen kits end to end, approving automatically
 npm run build:replay         # writes preview/agent-console.html from those runs
 ```
 
@@ -202,7 +204,7 @@ Then ask, for example: "Find me a set of insulated water bottles under $85 with 
 
 ## Hosted on AWS
 
-The same thirteen kits are hosted on **Amazon Bedrock AgentCore Runtime** at [https://d1zoxhgak5pvwd.cloudfront.net/](https://d1zoxhgak5pvwd.cloudfront.net/) (judge sign-in under [Try it live](#try-it-live)), with Claude on **Amazon Bedrock** as the model. The deployment follows the pattern of Airwallex's AWS reference builds for kits 1 to 8.
+The same fifteen kits are hosted on **Amazon Bedrock AgentCore Runtime** at [https://d1zoxhgak5pvwd.cloudfront.net/](https://d1zoxhgak5pvwd.cloudfront.net/) (judge sign-in under [Try it live](#try-it-live)), with Claude on **Amazon Bedrock** as the model. The deployment follows the pattern of Airwallex's AWS reference builds for kits 1 to 8.
 
 - **The console:** the page is served from a private S3 bucket through Amazon CloudFront (HTTPS, security headers). Operators sign in with Amazon Cognito, which has no self sign-up. API Gateway checks each request's sign-in token, then a Lambda forwards it to the runtime, which has no public endpoint.
 - **Approvals:** recorded under the signed-in person, taken from the verified token. An approval can never come from the agent.
@@ -233,6 +235,8 @@ The guide lists what each kit needs. Kits whose feature isn't enabled on your ac
 | 11 | Funded Metal testnet wallet | See [Metal testnet](#metal-testnet-kits-11-and-12) below |
 | 12 | Metal testnet access | See [Metal testnet](#metal-testnet-kits-11-and-12) below |
 | 13 | Fund a wallet | `npm run fund` (it reads back its own simulated deposits, so nothing else is needed) |
+| 14 | None | Card acceptance by API, as kits 9 and 10 |
+| 15 | None | Card issuing, as kits 2 and 5 |
 
 Plan for lead time on enablement. A quick way to test whether a feature is on yet is to run the kit with `RAILS=live`, which turns the fallback off and fails fast:
 
@@ -304,7 +308,7 @@ Faucet limits: ten grants per IP per UTC day, one per minute. Each grant tops an
 
 Every kit calls the real Airwallex sandbox first. If Airwallex refuses a feature that hasn't been enabled for an account, only that part of the run switches to an emulator built from documented behaviour. The console labels it **Card rail emulated**, **Platform rail emulated** or **Metal rail emulated**, and the run explains why. The same code goes live as soon as the feature is enabled.
 
-Status on our US sandbox account: **every Airwallex call in all thirteen kits runs live.**
+Status on our US sandbox account: **every Airwallex call in all fifteen kits runs live.**
 
 | Kits | Live on Airwallex | Not live yet |
 |---|---|---|
@@ -319,6 +323,8 @@ Status on our US sandbox account: **every Airwallex call in all thirteen kits ru
 | 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee | Metal spending limits for the kit's 200+ payments (each on-chain payment takes seconds and faucet-limited gas; `npm run metal:check` proves the same limits live: bind, pay under, refused over) |
 | 12 | Card pre-authorization holds, increments, single captures, cancels · Metal clearing on testnet: deposits, signed running totals, withdrawals | Nothing when Metal's clearing service is reachable. A live run takes 15–20 minutes because withdrawals wait for Metal's challenge windows; `METAL=emulated` runs it in 30 seconds |
 | 13 | Deposits with payer and reference, read back from the statement · beneficiary schema and validation · the refund payout · FX quote and conversion for the placement | Nothing |
+| 14 | Payment intents, declines with issuer response codes (51, 54, 05, risk), retries on the same intent | Nothing |
+| 15 | Card issuing with spend controls, authorizations (one declined at the till), beneficiary checks, the reimbursement payout | Nothing |
 
 **FX and payouts inside new connected accounts.** Airwallex applies FX and payout pricing to a connected account a little while after it is created; until then those calls are refused with `unconfigured_client_fee` or `fee_unknown`. We measured FX pricing after about 2 minutes and payout pricing after 30 seconds to 3 minutes. Airwallex confirmed there is no status or webhook that marks pricing as ready, and no published delay. So, as they advised, kits 6 and 7 wait until each fresh account is ACTIVE (`GET /accounts/{id}`; the `account.connected` webhook carries the same signal). From there they retry with backoff (up to `FEE_WAIT_SECONDS`, default 300), and then run inside the customer's own account. If pricing still hasn't arrived by then, they fall back to routing that call through the platform account (the customer's own balance is charged first, so funds are never mixed) and the run says so.
 
@@ -349,7 +355,7 @@ Behind a proxy on Node 22+, run with `NODE_USE_ENV_PROXY=1`.
 ## Tests
 
 ```sh
-npm test                     # 91 tests: policy for all thirteen kits, approvals, the beneficiary schema check and the AWS console API
+npm test                     # 102 tests: policy for all fifteen kits, approvals, the beneficiary schema check and the AWS console API
 npm run typecheck
 npm run verify               # both, as CI runs them
 ```

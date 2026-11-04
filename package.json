@@ -35,7 +35,9 @@
     "aws:seed": "tsx scripts/aws-seed-secret.ts",
     "aws:operator": "tsx scripts/aws-add-operator.ts",
     "aws:merchant": "tsx scripts/aws-merchant.ts",
-    "kit13": "tsx kits/13-cash-reconciliation/run.ts"
+    "kit13": "tsx kits/13-cash-reconciliation/run.ts",
+    "kit14": "tsx kits/14-payment-recovery/run.ts",
+    "kit15": "tsx kits/15-expense-policy/run.ts"
   },
   "license": "MIT",
   "devDependencies": {

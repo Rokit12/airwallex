@@ -29,6 +29,8 @@ export const KITS: KitInfo[] = [
   { id: "11", name: "x402 Business Agents", track: "Agent Payments", script: "kits/11-x402-business-agents/run.ts", summary: "Three agents share 20 *USDZ; move their limits when a supplier's price rises, and resolve a disputed batch." },
   { id: "12", name: "Inference Sourcing Agent", track: "Inference Sourcing", script: "kits/12-inference-sourcing/run.ts", summary: "Buy every AI step at the live price; reroute and ration the float when budgets or speed change." },
   { id: "13", name: "Cash Placement & Reconciliation", track: "Treasury & Ops", script: "kits/13-cash-reconciliation/run.ts", summary: "Match every payment to its invoice, explain every cent, and place only identified cash." },
+  { id: "14", name: "Failed-Payment Recovery", track: "Revenue Protection", script: "kits/14-payment-recovery/run.ts", summary: "Recover failed subscription charges by decline code: retry, ask for a new card, or pause; never charge twice." },
+  { id: "15", name: "Expense Policy Agent", track: "Expense & Policy", script: "kits/15-expense-policy/run.ts", summary: "Match card spend to receipts, deduct personal charges, and reimburse out-of-pocket costs once." },
 ];
 
 export type KitEvent = Record<string, unknown> & { type: string; t: number; seq?: number };

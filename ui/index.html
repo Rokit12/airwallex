@@ -220,6 +220,8 @@ const KIT_FALLBACK = [
   { id: "11", name: "x402 Business Agents", track: "Agent Payments", summary: "Three agents share 20 *USDZ; move their limits when a supplier's price rises, and resolve a disputed batch." },
   { id: "12", name: "Inference Sourcing Agent", track: "Inference Sourcing", summary: "Buy every AI step at the live price; reroute and ration the float when budgets or speed change." },
   { id: "13", name: "Cash Placement & Reconciliation", track: "Treasury & Ops", summary: "Match every payment to its invoice, explain every cent, and place only identified cash." },
+  { id: "14", name: "Failed-Payment Recovery", track: "Revenue Protection", summary: "Recover failed subscription charges by decline code: retry, ask for a new card, or pause; never charge twice." },
+  { id: "15", name: "Expense Policy Agent", track: "Expense & Policy", summary: "Match card spend to receipts, deduct personal charges, and reimburse out-of-pocket costs once." },
 ];
 
 /* What each agent decides, and what runs live or simulated (and why). */
@@ -237,6 +239,8 @@ const DECIDES = {
   "11": "Three agents share 20 *USDZ: whose limits move when a supplier's price rises, and which disputed charges to refund.",
   "12": "Which provider each AI step is bought from, and how card holds and a short float stretch when a job overruns.",
   "13": "Which invoice each payment settles, what is owed back or quarantined, and where today's identified cash goes.",
+  "14": "Which failed renewals to retry, when, and which customers to ask for a new card or pause, from the issuer's response code.",
+  "15": "Which card spend is backed and within policy, what the employee owes back, and what to reimburse.",
 };
 const RAILS = {
   "01": { live: "Airwallex: balances, FX quotes and conversions, beneficiaries, SWIFT and US payouts, deposits" },
@@ -252,6 +256,8 @@ const RAILS = {
   "11": { live: "Airwallex: deposit credited by Metal transaction, FX to EUR, SWIFT licence fee · Metal testnet x402 payments (npm run metal:check)", sim: "Metal mandates (spending limits) and on-chain refusals", why: "200+ on-chain payments are too slow and gas-limited for a demo; the same limits are proven live by npm run metal:check" },
   "12": { live: "Airwallex: card pre-authorization holds, increments, single captures, cancels · Metal clearing on testnet: deposits, signed running totals, withdrawals", note: "A live run takes 15–20 minutes: Metal releases withdrawals after two 5-minute challenge windows. METAL=emulated runs it in 30 seconds." },
   "13": { live: "Airwallex: deposits read back from the statement, beneficiary schema and validation, the refund payout, FX quote and conversion for the placement" },
+  "14": { live: "Airwallex: payment intents, live declines with issuer response codes (51, 54, 05, risk), retries on the same intent, read-back" },
+  "15": { live: "Airwallex: card issuing with spend controls, live authorizations (one declined at the till), beneficiary schema and validation, the reimbursement payout" },
 };
 const partlySimulated = (id) => Boolean(RAILS[id]?.sim);
 
@@ -462,7 +468,7 @@ function showOverview() {
   renderKits();
   renderHeadChips();
   renderRails(null);
-  $("runTrack").textContent = "Thirteen agents · the twelve starter kits plus cash reconciliation";
+  $("runTrack").textContent = "Fifteen agents · the twelve starter kits plus three for the gaps";
   $("runName").textContent = "Airwallex Agent Desk";
   $("runSub").textContent = "Trailhead Outfitters LLC · United States of America · USD";
   $("runControls").innerHTML = "";
