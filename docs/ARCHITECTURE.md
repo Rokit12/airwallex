@@ -132,6 +132,17 @@ The server streams these to the browser with server-sent events. **Approve** and
 - `server.ts`: HTML pages for the browser agent, the hosted payment page, an order-status page used before any retry, and the MCP endpoint at `/mcp`.
 - `credentials.ts`: where the shopping agent gets card credentials: the Airi CLI (mandate → passkey confirmation → single-use credential in an owner-only file → result reported) when `AIRI_PAYMENT_METHOD_ID` is set, otherwise the sandbox test card.
 
+## Hosted on AWS
+
+The kits are the same code on AWS. `scripts/build-agentcore.mjs` bundles each kit and `src/aws/runtime.ts` into a Node.js 22 package for Amazon Bedrock AgentCore Runtime.
+
+- **The runtime:** answers `/ping` and `/invocations` (`kits`, `run`, `events`, `approve`). It starts kits through the same runner as the local console.
+- **The console API:** `src/aws/api.ts`, behind API Gateway and a Cognito JWT authorizer, sets the approver from the verified token before invoking the runtime.
+- **Model calls:** `src/core/llm.ts` calls Claude on Bedrock when `BEDROCK_MODEL_ID` is set. Otherwise it calls the Anthropic API, or falls back to rules.
+- **Browser:** `src/core/browser.ts` launches a packaged arm64 Chromium when `CHROMIUM_PACK` is set.
+
+See [AWS.md](AWS.md).
+
 ## Design choices worth knowing
 
 - **One request id per operation.** New payments always get a new UUID; retries of the same operation reuse it. Airwallex rejects a reused id with `duplicate_request_id`, which kit 3 relies on as a second line of defence.

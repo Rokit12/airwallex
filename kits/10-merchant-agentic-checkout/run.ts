@@ -19,7 +19,7 @@
  * implements the same flow until then.
  */
 import { createHash } from "node:crypto";
-import { chromium } from "playwright";
+import { launchBrowser } from "../../src/core/browser.ts";
 import { RailsClient } from "../../src/core/rails.ts";
 import { startStore } from "../../src/commerce/server.ts";
 import { MERCHANT } from "../../src/commerce/store.ts";
@@ -48,7 +48,7 @@ const tool = async (name: string, args: unknown) => {
 
 /** The shopper's own browser on the hosted payment page. The agent never sees these card numbers. */
 async function shopperPays(paymentUrl: string, card: { number: string; label: string }) {
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     await page.goto(url + paymentUrl);

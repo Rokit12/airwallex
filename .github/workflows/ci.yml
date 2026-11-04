@@ -18,3 +18,5 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Build the AgentCore package and synthesise the AWS stack
+        run: npm run aws:build && npx cdk synth --app "npx tsx infra/app.ts" -q

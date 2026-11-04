@@ -45,6 +45,11 @@ createServer(async (req, res) => {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(readFileSync(join(process.cwd(), "ui", "index.html")));
     return;
   }
+  if (req.method === "GET" && url.pathname === "/config.js") {
+    // The AWS deployment serves its sign-in and API settings here; locally there are none.
+    res.writeHead(200, { "content-type": "text/javascript" }).end("// local console: no hosted settings\n");
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/api/kits") return json(res, 200, { kits: KITS, running: current?.kit.id ?? null });
 
   if (req.method === "GET" && url.pathname === "/api/events") {

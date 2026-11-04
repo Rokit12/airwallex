@@ -4,3 +4,7 @@ runs/
 *.log
 scratch/
 .metal/
+dist/
+.cache/
+cdk.out/
+infra/outputs.json

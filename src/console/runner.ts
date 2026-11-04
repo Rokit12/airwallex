@@ -51,8 +51,11 @@ export function startKit(kit: KitInfo, onEvent: (e: KitEvent) => void, extraEnv:
     onEvent(ev);
   };
 
-  const tsx = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
-  const child = spawn(process.execPath, [tsx, kit.script], {
+  // Locally each kit runs from its TypeScript source through tsx. In the AWS
+  // deployment package the kits are pre-built (KIT_BUNDLE_DIR/kitNN.mjs).
+  const bundled = process.env.KIT_BUNDLE_DIR;
+  const args = bundled ? [join(bundled, `kit${kit.id}.mjs`)] : [join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs"), kit.script];
+  const child = spawn(process.execPath, args, {
     cwd: process.cwd(),
     env: { ...process.env, UI_EVENTS: "1", FORCE_COLOR: "0", ...extraEnv },
     stdio: ["pipe", "pipe", "pipe"],

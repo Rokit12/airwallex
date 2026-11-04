@@ -15,7 +15,7 @@
  * The merchant here is the local test storefront: real-merchant checkout needs
  * allowlisted Airi CLI access and a pre-funded card from Airwallex.
  */
-import { chromium } from "playwright";
+import { launchBrowser } from "../../src/core/browser.ts";
 import { RailsClient } from "../../src/core/rails.ts";
 import { startStore } from "../../src/commerce/server.ts";
 import { MERCHANT, DELIVERY } from "../../src/commerce/store.ts";
@@ -32,7 +32,7 @@ and I only buy from places that take returns.`;
 
 const awx = new RailsClient();
 const { store, url, close } = await startStore(awx);
-const browser = await chromium.launch();
+const browser = await launchBrowser();
 const page = await browser.newPage();
 const provider = credentialsProvider();
 const num = async (sel: string) => Number(await page.getAttribute(sel, "data-value"));

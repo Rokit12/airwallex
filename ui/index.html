@@ -178,7 +178,7 @@ td .bad { color: var(--bad); } td .good { color: var(--ok); }
       <h1>Agent Console</h1>
       <span class="eyebrow" id="biz">Trailhead Outfitters LLC · United States of America · USD</span>
     </div>
-    <div class="chips"><button class="btn ghost" id="home" type="button">All kits</button><span class="chips" id="modechips"><span class="pill idle">Connecting…</span></span></div>
+    <div class="chips"><button class="btn ghost" id="home" type="button">All kits</button><span class="chips" id="modechips"><span class="pill idle">Connecting…</span></span><span class="chips" id="who"></span></div>
   </header>
 
   <div class="grid">
@@ -203,6 +203,7 @@ td .bad { color: var(--bad); } td .good { color: var(--ok); }
   </div>
 </div>
 
+<script src="config.js"></script>
 <script>
 const REPLAY = window.__REPLAY__ || null; // set when the page is built for replay without a backend
 const KIT_FALLBACK = [
@@ -533,7 +534,7 @@ async function run(id) {
   setStatus(id, "running");
   showLive(id);
   $("go").disabled = true;
-  const res = await fetch(`/api/run/${id}`, { method: "POST" });
+  const res = await api(`/api/run/${id}`, { method: "POST" });
   if (!res.ok) {
     const { error } = await res.json().catch(() => ({ error: "Could not start the run." }));
     $("timeline").insertAdjacentHTML("beforeend", `<div class="finish bad">${esc(error)}</div>`);
@@ -542,27 +543,84 @@ async function run(id) {
 }
 async function answer(evId, approve, card) {
   card.querySelectorAll("button").forEach((b) => (b.disabled = true));
-  await fetch("/api/approve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: evId, approve, by: "operator" }) });
+  // On AWS the approver is the signed-in operator, set by the API from the verified token.
+  await api("/api/approve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: evId, approve, by: "operator" }) });
 }
 let currentRunKit = null;
+function handleEvent(ev) {
+  if (ev.type === "run_started") { currentRunKit = ev.kit; state.runs[ev.kit] = []; if (!state.status[ev.kit] || state.status[ev.kit] === "idle") setStatus(ev.kit, "running"); }
+  const kit = currentRunKit;
+  if (!kit) return;
+  const list = (state.runs[kit] ||= []);
+  if (list.some((e) => e.seq === ev.seq && e.type === ev.type)) return;
+  list.push(ev);
+  if (state.selected === kit) {
+    const el = render(ev, { interactive: ev.type === "approval_request", evs: list });
+    if (el) { $("timeline").querySelector(".empty")?.remove(); $("timeline").appendChild(el); el.scrollIntoView({ block: "nearest" }); }
+    if (ev.type === "run_finished") showLive(kit);
+  } else if (ev.type === "run_finished") setStatus(kit, ev.code ? "failed" : "done");
+}
 function connect() {
+  if (HOSTED) return poll();
   const es = new EventSource("/api/events");
   es.onopen = renderHeadChips;
   es.onerror = () => ($("modechips").innerHTML = `<span class="pill bad">Console server offline</span>`);
-  es.onmessage = (m) => {
-    const ev = JSON.parse(m.data);
-    if (ev.type === "run_started") { currentRunKit = ev.kit; state.runs[ev.kit] = []; if (!state.status[ev.kit] || state.status[ev.kit] === "idle") setStatus(ev.kit, "running"); }
-    const kit = currentRunKit;
-    if (!kit) return;
-    const list = (state.runs[kit] ||= []);
-    if (list.some((e) => e.seq === ev.seq && e.type === ev.type)) return;
-    list.push(ev);
-    if (state.selected === kit) {
-      const el = render(ev, { interactive: ev.type === "approval_request", evs: list });
-      if (el) { $("timeline").querySelector(".empty")?.remove(); $("timeline").appendChild(el); el.scrollIntoView({ block: "nearest" }); }
-      if (ev.type === "run_finished") showLive(kit);
-    } else if (ev.type === "run_finished") setStatus(kit, ev.code ? "failed" : "done");
-  };
+  es.onmessage = (m) => handleEvent(JSON.parse(m.data));
+}
+
+/* ── Hosted on AWS: Cognito sign-in, API Gateway, AgentCore Runtime ── */
+// config.js sets window.AWX_CONFIG = {api, authDomain, clientId} on the AWS
+// deployment; locally it is empty and the console talks to npm run console.
+const HOSTED = window.AWX_CONFIG && window.AWX_CONFIG.api ? window.AWX_CONFIG : null;
+const store = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} } };
+let accessToken = null;
+const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const redirectUri = () => location.origin + location.pathname;
+async function signIn() {
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+  const st = b64url(crypto.getRandomValues(new Uint8Array(16)));
+  store.set("awx.pkce", verifier); store.set("awx.state", st); store.set("awx.hash", location.hash);
+  const q = new URLSearchParams({ response_type: "code", client_id: HOSTED.clientId, redirect_uri: redirectUri(), scope: "openid email profile", code_challenge: challenge, code_challenge_method: "S256", state: st });
+  location.assign(`${HOSTED.authDomain}/oauth2/authorize?${q}`);
+}
+async function ensureSignedIn() {
+  const url = new URL(location.href);
+  const code = url.searchParams.get("code");
+  if (code && url.searchParams.get("state") === store.get("awx.state")) {
+    const res = await fetch(`${HOSTED.authDomain}/oauth2/token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", client_id: HOSTED.clientId, code, redirect_uri: redirectUri(), code_verifier: store.get("awx.pkce") || "" }) });
+    if (res.ok) { const t = await res.json(); store.set("awx.token", t.id_token); /* the ID token names the operator (email); API Gateway checks its audience */ store.set("awx.exp", String(Date.now() + (t.expires_in - 60) * 1000)); }
+    history.replaceState(null, "", location.pathname + (store.get("awx.hash") || ""));
+    store.set("awx.pkce", null); store.set("awx.state", null);
+  }
+  if (store.get("awx.token") && Number(store.get("awx.exp")) > Date.now()) { accessToken = store.get("awx.token"); return true; }
+  await signIn();
+  return false;
+}
+function signOut() {
+  store.set("awx.token", null);
+  location.assign(`${HOSTED.authDomain}/logout?${new URLSearchParams({ client_id: HOSTED.clientId, logout_uri: redirectUri() })}`);
+}
+async function api(path, opts = {}) {
+  if (!HOSTED) return fetch(path, opts);
+  const res = await fetch(HOSTED.api.replace(/\/$/, "") + path, { ...opts, headers: { ...(opts.headers || {}), authorization: `Bearer ${accessToken}` } });
+  if (res.status === 401) { store.set("awx.token", null); await signIn(); }
+  return res;
+}
+let since = 0, lastRunId = null;
+async function poll() {
+  try {
+    const r = await api(`/api/events?since=${since}`);
+    if (r.ok) {
+      const d = await r.json();
+      if (d.runId && d.runId !== lastRunId) { lastRunId = d.runId; if (since) { since = 0; return setTimeout(poll, 0); } }
+      for (const ev of d.events || []) { handleEvent(ev); since = Math.max(since, (ev.seq ?? 0) + 1); }
+      setTimeout(poll, d.running ? 1000 : 3000);
+    } else setTimeout(poll, 4000);
+  } catch {
+    $("modechips").innerHTML = `<span class="pill bad">Agent runtime unreachable, retrying</span>`;
+    setTimeout(poll, 5000);
+  }
 }
 
 /* ── Boot ───────────────────────────────────────────────── */
@@ -575,8 +633,9 @@ function connect() {
     $("home").onclick = () => { history.replaceState(null, "", location.pathname); select(null); };
     return;
   }
+  if (HOSTED && !(await ensureSignedIn())) return;
   try {
-    const r = await fetch("/api/kits");
+    const r = await api("/api/kits");
     state.kits = (await r.json()).kits;
   } catch {
     state.kits = KIT_FALLBACK;
@@ -584,6 +643,11 @@ function connect() {
   renderKits();
   renderHeadChips();
   connect();
+  if (HOSTED) {
+    const me = await api("/api/me").then((r) => r.json()).catch(() => ({}));
+    if (me.operator) $("who").innerHTML = `<span class="pill ok" title="Approvals are recorded under this name">Approver: ${esc(me.operator)}</span><button class="btn ghost" id="signout" type="button">Sign out</button>`;
+    $("signout")?.addEventListener("click", signOut);
+  }
   $("home").onclick = () => { history.replaceState(null, "", location.pathname); select(null); };
   select(location.hash.replace("#kit", "") || null);
 })();

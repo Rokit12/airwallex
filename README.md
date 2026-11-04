@@ -4,14 +4,22 @@ Twelve finance agents for **Trailhead Outfitters LLC**, a US business, built on 
 
 **Sandbox only. No real money.** All names, accounts and products are synthetic. This is not official Airwallex documentation.
 
+## Demo video
+
+[![Demo video: all twelve agents running in the Agent Console (4:57)](docs/images/demo-video.png)](https://drive.google.com/file/d/1218Uh4_Xp9PMt1SWIDUY2EpOCkHewipg/view?usp=sharing)
+
+**[Watch the demo video (4:57)](https://drive.google.com/file/d/1218Uh4_Xp9PMt1SWIDUY2EpOCkHewipg/view?usp=sharing)**. It shows all twelve kits running against the Airwallex sandbox in the Agent Console, each followed by the same activity in the Airwallex dashboard and inbox.
+
 ![The Agent Console stopping a run for approval of exact payment terms](docs/images/console-approval.png)
 
 ## Contents
 
+- [Demo video](#demo-video)
 - [Submission at a glance](#submission-at-a-glance)
 - [The agents](#the-agents)
 - [Quick start](#quick-start)
 - [Running the agents](#running-the-agents)
+- [Hosted on AWS](#hosted-on-aws)
 - [Kit setup and enablement](#kit-setup-and-enablement)
 - [How this follows the hackathon guide](#how-this-follows-the-hackathon-guide)
 - [Live and emulated](#live-and-emulated)
@@ -26,7 +34,7 @@ Twelve finance agents for **Trailhead Outfitters LLC**, a US business, built on 
 | Requirement | Where |
 |---|---|
 | **Working demo** | `npm run console`, then open http://localhost:4310 and run any kit against your own sandbox ([Quick start](#quick-start)). Without credentials, open `preview/agent-console.html`, which replays recorded runs of all twelve kits. |
-| **Video under 5 minutes** | A walkthrough of all twelve kits running in the console, linked in the submission. |
+| **Video under 5 minutes** | [Demo video (4:57)](https://drive.google.com/file/d/1218Uh4_Xp9PMt1SWIDUY2EpOCkHewipg/view?usp=sharing): a walkthrough of all twelve kits running in the console. |
 | **Repository with setup instructions** | This README: [Quick start](#quick-start), [Kit setup and enablement](#kit-setup-and-enablement), [Troubleshooting](docs/TROUBLESHOOTING.md). |
 | **Uses Airwallex APIs** | Every kit calls the Airwallex sandbox REST API: authentication, balances, Global Accounts, simulated deposits, FX rates, quotes and conversions, beneficiaries, transfers and transfer simulations, card issuing (cardholders, cards, controls, transactions), payment intents (confirm, pre-authorization, increment, capture, cancel), disputes and dispute simulations, file uploads, connected accounts. Each run writes every call to an audit log in `runs/`. |
 
@@ -175,6 +183,23 @@ claude mcp add-json trailhead-store '{"type":"http","url":"http://localhost:4320
 
 Then ask, for example: "Find me a set of insulated water bottles under $85 with returns."
 
+## Hosted on AWS
+
+The same twelve kits also deploy to **Amazon Bedrock AgentCore Runtime**, with Claude on **Amazon Bedrock** as the model. The deployment follows the pattern of Airwallex's AWS reference builds for kits 1 to 8.
+
+- **The console:** operators sign in with Amazon Cognito. The page is served from CloudFront, and an API Gateway + Lambda layer forwards to the runtime, which has no public endpoint.
+- **Approvals:** recorded under the signed-in person, taken from the verified token. An approval can never come from the agent.
+- **Credentials:** the sandbox keys live in Secrets Manager, and the runtime calls the model through its IAM role, so no model key is stored anywhere.
+- **Cost:** a USD 100 monthly budget alert guards spend.
+
+```sh
+npm run aws:deploy -- -c alertEmail=you@example.com   # CDK: runtime, Cognito, API, console, budget
+npm run aws:seed                                      # sandbox keys from .env into Secrets Manager
+npm run aws:operator -- you@example.com               # invite an operator
+```
+
+[docs/AWS.md](docs/AWS.md) covers the prerequisites, the architecture, what differs from a local run, and how to test the runtime package locally without an AWS account.
+
 ## Kit setup and enablement
 
 The guide lists what each kit needs. Kits whose feature isn't enabled on your account still run end to end: the refused part switches to an emulator built from the documented behaviour, and the console labels the run (see [Live and emulated](#live-and-emulated)).
@@ -271,7 +296,7 @@ Status on our US sandbox account: **every Airwallex call in all twelve kits runs
 | 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee | Metal spending limits for the kit's 200+ payments (each on-chain payment takes seconds and faucet-limited gas; `npm run metal:check` proves the same limits live: bind, pay under, refused over) |
 | 12 | Card pre-authorization holds, increments, single captures, cancels · Metal clearing on testnet: deposits, signed running totals, withdrawals | Nothing when Metal's clearing service is reachable. A live run takes 15–20 minutes because withdrawals wait for Metal's challenge windows; `METAL=emulated` runs it in 30 seconds |
 
-**FX and payouts inside new connected accounts.** Airwallex applies FX and payout pricing to a connected account a little while after it is created; until then those calls are refused with `unconfigured_client_fee` or `fee_unknown`. We measured FX pricing after about 2 minutes and payout pricing after 30 seconds to 3 minutes. Kits 6 and 7 open fresh accounts on each run, so they retry with backoff (up to `FEE_WAIT_SECONDS`, default 300) and then run inside the customer's own account. If pricing still hasn't arrived by then, they fall back to routing that call through the platform account (the customer's own balance is charged first, so funds are never mixed) and the run says so.
+**FX and payouts inside new connected accounts.** Airwallex applies FX and payout pricing to a connected account a little while after it is created; until then those calls are refused with `unconfigured_client_fee` or `fee_unknown`. We measured FX pricing after about 2 minutes and payout pricing after 30 seconds to 3 minutes. Airwallex confirmed there is no status or webhook that marks pricing as ready, and no published delay. So, as they advised, kits 6 and 7 wait until each fresh account is ACTIVE (`GET /accounts/{id}`; the `account.connected` webhook carries the same signal). From there they retry with backoff (up to `FEE_WAIT_SECONDS`, default 300), and then run inside the customer's own account. If pricing still hasn't arrived by then, they fall back to routing that call through the platform account (the customer's own balance is charged first, so funds are never mixed) and the run says so.
 
 On Metal testnet, faucet funding, x402 payments and spending limits (bind, pay under the cap, refused over it) are live: `npm run metal:check` proves them. Kit 12's clearing runs live on testnet too; `npm run metal:withdraw` brings unspent clearing deposits back to the operator after Metal finalizes them.
 
@@ -320,6 +345,9 @@ src/core/            Airwallex client, sandbox simulations, emulators, approvals
 src/console/         web console server, kit runner, recorder, replay builder
 src/commerce/        test storefront, merchant MCP server, card credentials provider
 src/metal/           Metal: x402 sellers (live and local), emulator, live check
+src/aws/             AgentCore Runtime entrypoint, console API Lambda, secrets loader
+infra/app.ts         AWS CDK app: AgentCore Runtime, Cognito, API Gateway, CloudFront, budget
+scripts/             AgentCore package build, secret seeding, operator invite
 ui/index.html        the console page
 docs/                architecture, troubleshooting, screenshots
 preview/             replay page built from recorded runs
@@ -342,6 +370,7 @@ runs/                audit logs and run outputs (git-ignored)
 
 - [Architecture](docs/ARCHITECTURE.md): layers, decision flow, core modules, console event protocol
 - [Troubleshooting](docs/TROUBLESHOOTING.md): login, access, Metal and run-time issues
+- [Running on AWS](docs/AWS.md): AgentCore Runtime, Bedrock, Cognito sign-in, deploy and remove
 - Each kit's README, linked in [the agents table](#the-agents)
 
 ## License

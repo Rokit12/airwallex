@@ -10,9 +10,34 @@ import { audit } from "./audit.ts";
 
 const MODEL = process.env.AGENT_MODEL ?? "claude-sonnet-5-5";
 
-export const llmEnabled = () => Boolean(process.env.ANTHROPIC_API_KEY);
+/**
+ * On AWS the model is Claude on Amazon Bedrock (BEDROCK_MODEL_ID, an inference
+ * profile such as us.anthropic.claude-sonnet-5), called with the runtime's IAM
+ * role, so no model key is stored anywhere. Locally it is the Anthropic API.
+ */
+const bedrockModel = () => process.env.BEDROCK_MODEL_ID;
+export const llmEnabled = () => Boolean(bedrockModel() || process.env.ANTHROPIC_API_KEY);
+
+async function completeBedrock(system: string, user: string, maxTokens: number): Promise<string> {
+  const { BedrockRuntimeClient, ConverseCommand } = await import("@aws-sdk/client-bedrock-runtime");
+  const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION });
+  const models = [bedrockModel()!, process.env.BEDROCK_FALLBACK_MODEL_ID].filter(Boolean) as string[];
+  let last: unknown;
+  for (const modelId of models) {
+    try {
+      const out = await client.send(
+        new ConverseCommand({ modelId, system: [{ text: system }], messages: [{ role: "user", content: [{ text: user }] }], inferenceConfig: { maxTokens } }),
+      );
+      return (out.output?.message?.content ?? []).map((b) => b.text ?? "").join("");
+    } catch (err) {
+      last = err; // try the fallback model, then give up and let the caller use its rules
+    }
+  }
+  throw last;
+}
 
 async function complete(system: string, user: string, maxTokens = 600): Promise<string> {
+  if (bedrockModel()) return completeBedrock(system, user, maxTokens);
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
