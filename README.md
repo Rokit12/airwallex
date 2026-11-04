@@ -293,6 +293,8 @@ Faucet limits: ten grants per IP per UTC day, one per minute. Each grant tops an
 | Amounts are major units | All Airwallex amounts in code are major units; Metal amounts are converted from base units in `src/metal/units.ts` |
 | Branch on FAILED and CANCELLED (FAILED auto-cancels in seconds) | Kit 3 keeps the failure reason from the event, before the auto-cancel |
 | Use NL, DE or FR for EUR | Kit 1's EUR beneficiary is in Germany |
+| Call the beneficiary schema first; validate over REST with `beneficiaries/validate` | Kit 1 checks each payee's required fields with `POST /beneficiaries/schema`, then `POST /beneficiaries/validate`, before creating it; a missing or invalid field escalates instead of paying (`src/core/beneficiary-schema.ts`) |
+| Card states: CLEARING is accepted, `failure_reason` is the decline | Kit 2 reads both; it also runs the full card lifecycle: a hold that is reversed, an invoice authorized then captured (`card_transaction_lifecycles` paths), and a refund back to the card |
 
 ## Live and emulated
 
@@ -341,7 +343,7 @@ Behind a proxy on Node 22+, run with `NODE_USE_ENV_PROXY=1`.
 ## Tests
 
 ```sh
-npm test                     # 69 tests: policy for all twelve kits, plus approvals
+npm test                     # 75 tests: policy for all twelve kits, approvals, the beneficiary schema check and the AWS console API
 npm run typecheck
 npm run verify               # both, as CI runs them
 ```

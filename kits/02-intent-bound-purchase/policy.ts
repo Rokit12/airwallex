@@ -134,3 +134,12 @@ export function predict(c: CardControls, auth: { amount: number; currency: strin
   }
   return "APPROVED";
 }
+
+/**
+ * Money coming back to the card: accept a refund only from the merchant this
+ * card pays, in the card's currency, and never more than was actually paid.
+ * Anything else is a mismatch for a person to look at.
+ */
+export function refundAllowed(refund: { merchant: string; amount: number; currency: string }, paid: { merchant: string; paid: number; currency: string }): boolean {
+  return refund.amount > 0 && refund.currency === paid.currency && refund.merchant === paid.merchant && refund.amount <= paid.paid;
+}

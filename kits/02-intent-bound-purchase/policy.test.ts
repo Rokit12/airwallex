@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { choosePlan, controlsFor, predict } from "./policy.ts";
+import { choosePlan, controlsFor, predict, refundAllowed } from "./policy.ts";
 import { QUOTE, FORECAST } from "./fixtures.ts";
 
 test("annual is 18% cheaper but breaches the floor in week 7, so the agent picks monthly", () => {
@@ -30,4 +30,14 @@ test("card controls admit exactly one monthly bill and nothing else", () => {
   assert.equal(predict(c, { ...ok, mcc: "5812" }, 0, true), "MERCHANT_CATEGORY_NOT_ALLOWED");
   assert.equal(predict(c, ok, 1200, true), "LIMIT_EXCEEDED"); // monthly cap
   assert.equal(predict(c, ok, 0, false), "CARD_INACTIVE");
+});
+
+test("a refund is accepted only from the paid merchant, in currency, up to what was paid", () => {
+  const paid = { merchant: "NORTHWIND ANALYTICS", paid: 1200, currency: "USD" };
+  assert.equal(refundAllowed({ merchant: "NORTHWIND ANALYTICS", amount: 120, currency: "USD" }, paid), true);
+  assert.equal(refundAllowed({ merchant: "NORTHWIND ANALYTICS", amount: 1200, currency: "USD" }, paid), true);
+  assert.equal(refundAllowed({ merchant: "NORTHWIND ANALYTICS", amount: 1200.01, currency: "USD" }, paid), false);
+  assert.equal(refundAllowed({ merchant: "NORTHWIND ANALYTICS", amount: 120, currency: "EUR" }, paid), false);
+  assert.equal(refundAllowed({ merchant: "CAFE LUNA", amount: 20, currency: "USD" }, paid), false);
+  assert.equal(refundAllowed({ merchant: "NORTHWIND ANALYTICS", amount: 0, currency: "USD" }, paid), false);
 });

@@ -8,7 +8,8 @@ A SaaS vendor offers USD 1,200 per month or USD 11,808 per year up front (18% ch
 
 1. **Plan.** Forecast 13 weeks of cash for both plans against a USD 12,000 reserve. Annual breaks the floor in week 7, so pick monthly and record week 9 (after a receivable lands) as the date to reconsider.
 2. **Enforce.** Issue a virtual card whose controls only allow that choice: USD only, the vendor's merchant categories, USD 1,200 per transaction and per month.
-3. **Prove.** Simulate five authorizations: the monthly bill, the annual price, the same bill in EUR, a restaurant charge, and a second charge in the month. Each outcome must match what the policy predicts.
+3. **Prove.** The vendor checks the card on file with a USD 1 hold, which is released (reversed), so it uses none of the month's limit. The first invoice is billed in two phases, authorized and then captured. Then four more authorizations: the monthly bill, the annual price, the same bill in EUR, a restaurant charge, and a second charge in the month. Each outcome must match what the policy predicts.
+   Money coming back is checked too: the vendor refunds a USD 120 service credit to the card, accepted only because it comes from the merchant this card pays, in the card's currency, and is no more than was paid (`refundAllowed()`).
 4. **New information.** The vendor raises the price to USD 1,350. The approval no longer covers the terms, so the agent freezes its own card (the next charge declines CARD_INACTIVE) and asks again, for the new price and the new limits.
 
 ## Live or emulated
@@ -24,7 +25,7 @@ npm run console       # or pick kit 02 in the web console
 
 ## Where the logic is
 
-`choosePlan()` compares the two cash paths; `controlsFor()` builds card controls from the decision; `predict()` states what each authorization should do.
+`choosePlan()` compares the two cash paths; `controlsFor()` builds card controls from the decision; `predict()` states what each authorization should do; `refundAllowed()` decides which refunds to accept.
 
 - `policy.ts`: the decisions, pure code
 - `policy.test.ts`: tests that pin them

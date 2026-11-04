@@ -34,3 +34,13 @@ export const PRICE_CHANGE_EMAIL = `From: billing@northwind-analytics.example
 Subject: Updated pricing for your Team plan
 
 Effective with your next invoice, the Team plan moves to USD 1,350.00 per month.`;
+
+/** The vendor's card-on-file check: a small hold it releases (reversed), never charged. */
+export const CARD_CHECK_HOLD = 1;
+
+/** Money coming back: a service credit the vendor refunds to the card. */
+export const SERVICE_CREDIT = 120;
+export const SERVICE_CREDIT_EMAIL = `From: billing@northwind-analytics.example
+Subject: Service credit for the 2 November outage
+
+Your Team plan was unavailable for 3 days. Under our SLA we have refunded USD 120.00 to the card on file.`;

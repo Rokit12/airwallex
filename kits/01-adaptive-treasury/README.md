@@ -11,9 +11,11 @@ Five obligations in USD, EUR and GBP fall due within 72 hours. USD 18,000 is fre
 3. **New information.** A USD 6,000 deposit lands. Only the decision it affects changes: the software renewal becomes fundable.
 4. **Execute.** An approved FX conversion on a single-use quote (the approval binds the quote id, rate and amounts), a SWIFT payout in EUR and an ACH payout in USD, all read back as PAID. The agent confirms the reserve still holds after queued payments and flags any fee that differs from plan.
 
+Before each payee is created, the agent asks Airwallex's beneficiary schema (`POST /beneficiaries/schema`) which fields that country, currency and method require, then validates the details (`POST /beneficiaries/validate`). If a field is missing or invalid (an invented routing code fails with code 010), the agent escalates instead of paying. The check caught a real gap while this kit was being built: Airwallex requires `bank_name` for both payees.
+
 ## Live or emulated
 
-Fully live: balances, FX rates, quotes and conversions, beneficiaries, transfers, deposit and transfer simulations.
+Fully live: balances, FX rates, quotes and conversions, the beneficiary schema check and validation, beneficiaries, transfers, deposit and transfer simulations.
 
 ## Run it
 

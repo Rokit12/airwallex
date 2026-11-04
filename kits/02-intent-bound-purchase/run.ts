@@ -19,8 +19,8 @@ import { extract, explain, llmEnabled } from "../../src/core/llm.ts";
 import { requestApproval, assertApproved, type Terms } from "../../src/core/approval.ts";
 import { auditPath } from "../../src/core/audit.ts";
 import { BUSINESS } from "../../src/core/business.ts";
-import { QUOTE, QUOTE_TEXT, FORECAST, PRICE_CHANGE_EMAIL } from "./fixtures.ts";
-import { choosePlan, controlsFor, predict, type Quote, type CardControls, type Outcome } from "./policy.ts";
+import { QUOTE, QUOTE_TEXT, FORECAST, PRICE_CHANGE_EMAIL, CARD_CHECK_HOLD, SERVICE_CREDIT, SERVICE_CREDIT_EMAIL } from "./fixtures.ts";
+import { choosePlan, controlsFor, predict, refundAllowed, type Quote, type CardControls, type Outcome } from "./policy.ts";
 
 const awx = new RailsClient();
 const sb = new Sandbox(awx);
@@ -54,13 +54,21 @@ async function waitForCard(cardId: string) {
   throw new Error(`Card ${cardId} did not become ACTIVE`);
 }
 
-/** Run one authorization and read back what Airwallex did. CLEARING = accepted; failure_reason = decline. */
-async function authorize(cardId: string, a: { amount: number; currency: string; mcc: string; merchant: string }): Promise<{ outcome: string; txId?: string }> {
+/**
+ * Run one authorization and read back what Airwallex did. CLEARING = accepted; failure_reason = decline.
+ * Two-phase (how most SaaS vendors bill): authorize, then capture the card transaction lifecycle.
+ */
+async function authorize(cardId: string, a: { amount: number; currency: string; mcc: string; merchant: string; twoPhase?: boolean }): Promise<{ outcome: string; txId?: string; lifecycleId?: string }> {
   try {
-    const tx = await sb.cardAuthorization({ card_id: cardId, amount: a.amount, currency: a.currency, mcc: a.mcc, merchant: a.merchant, singlePhase: true });
-    if (tx.failure_reason) return { outcome: tx.failure_reason, txId: tx.transaction_id };
-    if (tx.status === "FAILED") return { outcome: "FAILED", txId: tx.transaction_id };
-    return { outcome: "APPROVED", txId: tx.transaction_id };
+    const tx = await sb.cardAuthorization({ card_id: cardId, amount: a.amount, currency: a.currency, mcc: a.mcc, merchant: a.merchant, singlePhase: !a.twoPhase });
+    const lifecycleId = tx.card_transaction_lifecycle_id;
+    if (tx.failure_reason) return { outcome: tx.failure_reason, txId: tx.transaction_id, lifecycleId };
+    if (tx.status === "FAILED") return { outcome: "FAILED", txId: tx.transaction_id, lifecycleId };
+    if (a.twoPhase && lifecycleId) {
+      const captured = await sb.cardCapture(lifecycleId);
+      say.step(`${a.merchant} ${a.currency} ${a.amount}: authorized, then captured → ${captured.type ?? captured.transaction_type} ${captured.process_result ?? captured.status}`);
+    }
+    return { outcome: "APPROVED", txId: tx.transaction_id, lifecycleId };
   } catch (err) {
     if (err instanceof AwxError) return { outcome: `${err.code}` };
     throw err;
@@ -137,8 +145,14 @@ const limits = await awx.get(`/issuing/cards/${card.card_id}/limits`).catch(() =
 if (limits) say.step(`card limits read back: ${JSON.stringify(limits.limits ?? limits).slice(0, 160)}`);
 
 say.beat("prove", "Simulate authorizations; each outcome must match what the policy predicts.");
-const attempts = [
-  { label: "First monthly invoice", amount: bill, currency: "USD", mcc: "5734", merchant: "NORTHWIND ANALYTICS" },
+// The vendor checks the card on file with a small hold and releases it: the hold must not use up the month's limit.
+const hold = await sb.cardAuthorization({ card_id: card.card_id, amount: CARD_CHECK_HOLD, currency: "USD", mcc: "5734", merchant: "NORTHWIND ANALYTICS", singlePhase: false });
+if (hold.card_transaction_lifecycle_id && !hold.failure_reason) {
+  const released = await sb.cardReverse(hold.card_transaction_lifecycle_id);
+  say.step(`card-on-file check: USD ${CARD_CHECK_HOLD.toFixed(2)} hold → ${released.subtype ?? released.transaction_type ?? "REVERSAL"} (released, nothing charged)`);
+}
+const attempts: { label: string; amount: number; currency: string; mcc: string; merchant: string; twoPhase?: boolean }[] = [
+  { label: "First monthly invoice (authorize + capture)", amount: bill, currency: "USD", mcc: "5734", merchant: "NORTHWIND ANALYTICS", twoPhase: true },
   { label: "Vendor bills the annual price", amount: quote.annualPrice, currency: "USD", mcc: "5734", merchant: "NORTHWIND ANALYTICS" },
   { label: "Same bill in EUR", amount: 1100, currency: "EUR", mcc: "5734", merchant: "NORTHWIND ANALYTICS EU" },
   { label: "Team lunch on the SaaS card", amount: 45, currency: "USD", mcc: "5812", merchant: "CAFE LUNA" },
@@ -153,6 +167,13 @@ for (const a of attempts) {
   results.push({ attempt: a.label, amount: `${a.currency} ${a.amount}`, mcc: a.mcc, expected, outcome: outcome, match: expected === outcome ? "✔" : "✖" });
 }
 say.table(results);
+
+// Policy check on money coming back: a refund is accepted only from the merchant we pay, up to what we paid.
+say.document(SERVICE_CREDIT_EMAIL);
+if (refundAllowed({ merchant: "NORTHWIND ANALYTICS", amount: SERVICE_CREDIT, currency: "USD" }, { merchant: "NORTHWIND ANALYTICS", paid: spent, currency: "USD" })) {
+  const refund = await sb.cardRefund({ card_id: card.card_id, amount: SERVICE_CREDIT, currency: "USD", mcc: "5734", merchant: "NORTHWIND ANALYTICS" });
+  say.ok(`service credit refunded to the card: USD ${SERVICE_CREDIT} → ${refund.type ?? refund.transaction_type} ${refund.process_result ?? refund.status}`);
+}
 
 say.beat("new information", "Vendor emails a price increase.");
 say.document(PRICE_CHANGE_EMAIL);

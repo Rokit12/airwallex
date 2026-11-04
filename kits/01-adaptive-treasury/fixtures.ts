@@ -36,7 +36,7 @@ export const BENEFICIARIES = {
       entity_type: "COMPANY",
       company_name: "Hanse Container Terminal GmbH",
       address: { street_address: "Am Sandtorkai 1", city: "Hamburg", postcode: "20457", country_code: "DE" },
-      bank_details: { account_currency: "EUR", account_name: "Hanse Container Terminal GmbH", iban: "DE89370400440532013000", swift_code: "COBADEFFXXX", bank_country_code: "DE" },
+      bank_details: { account_currency: "EUR", account_name: "Hanse Container Terminal GmbH", iban: "DE89370400440532013000", swift_code: "COBADEFFXXX", bank_country_code: "DE", bank_name: "Commerzbank AG" },
     },
   },
   SOFTWARE: {
@@ -45,7 +45,7 @@ export const BENEFICIARIES = {
       entity_type: "COMPANY",
       company_name: "Ledgerly Inc",
       address: { street_address: "1 Market Plaza", city: "San Francisco", state: "CA", postcode: "94105", country_code: "US" },
-      bank_details: { account_currency: "USD", account_name: "Ledgerly Inc", account_number: "000555012345", account_routing_type1: "aba", account_routing_value1: "121000248", bank_country_code: "US", bank_account_category: "Checking", local_clearing_system: "ACH" },
+      bank_details: { account_currency: "USD", account_name: "Ledgerly Inc", account_number: "000555012345", account_routing_type1: "aba", account_routing_value1: "121000248", bank_country_code: "US", bank_account_category: "Checking", local_clearing_system: "ACH", bank_name: "Wells Fargo Bank" },
     },
   },
 } as const;

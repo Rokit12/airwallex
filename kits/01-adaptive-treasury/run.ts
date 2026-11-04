@@ -14,6 +14,7 @@
 import { writeFileSync } from "node:fs";
 import { AirwallexClient, newRequestId, money } from "../../src/core/client.ts";
 import { Sandbox } from "../../src/core/sandbox.ts";
+import { checkBeneficiary } from "../../src/core/beneficiary-schema.ts";
 import { say, usd } from "../../src/core/narrate.ts";
 import { extract, explain, llmEnabled } from "../../src/core/llm.ts";
 import { requestApproval, assertApproved, type Terms } from "../../src/core/approval.ts";
@@ -76,6 +77,14 @@ async function convert(o: Obligation, buy: number, needsApproval: boolean) {
 
 async function pay(o: Obligation, sourceCurrency: Ccy) {
   const spec = BENEFICIARIES[o.id as keyof typeof BENEFICIARIES];
+  // Ask Airwallex which fields this country, currency and method require before creating the payee.
+  const check = await checkBeneficiary(awx, spec as unknown as Record<string, unknown>);
+  if (check.missing.length || check.invalid.length) {
+    const why = check.missing.length ? `is missing ${check.missing.join(", ")}` : `fails validation on ${check.invalid.join(", ")}`;
+    say.decision("payee", "ESCALATE", `${o.payee}'s bank details ${why}; not paying until a person corrects them.`);
+    throw new Error(`beneficiary for ${o.payee} ${why}`);
+  }
+  say.step(`beneficiary: ${o.payee} has all ${check.checked} fields Airwallex requires for ${o.method} in ${o.currency}, and passes Airwallex's validation`);
   const ben = await awx.post("/beneficiaries/create", { request_id: newRequestId(), ...spec });
   const tr = await awx.post("/transfers/create", {
     request_id: newRequestId(),

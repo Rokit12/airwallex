@@ -74,8 +74,10 @@ export class CardEmulator {
       return { has_more: false, items: this.txs.filter((t) => !query.card_id || t.card_id === query.card_id) };
     }
     if (method === "POST" && route(/^\/simulation\/issuing\/create$/)) return this.authorize(body, path);
-    if (method === "POST" && route(/^\/simulation\/issuing\/([\w-]+)\/capture$/)) return this.settleTx(m![1]!, "CLEARING", path);
-    if (method === "POST" && route(/^\/simulation\/issuing\/([\w-]+)\/reverse$/)) return this.settleTx(m![1]!, "REVERSAL", path);
+    // Current API version: capture and reverse address the card transaction lifecycle.
+    if (method === "POST" && route(/^\/simulation\/issuing\/card_transaction_lifecycles\/([\w-]+)\/capture$/)) return this.settleTx(m![1]!, "CLEARING", path);
+    if (method === "POST" && route(/^\/simulation\/issuing\/card_transaction_lifecycles\/([\w-]+)\/reverse$/)) return this.settleTx(m![1]!, "REVERSAL", path);
+    if (method === "POST" && route(/^\/simulation\/issuing\/refund$/)) return this.refund(body, path);
 
     // ── Payments and disputes ────────────────────────────────────────────
     if (method === "POST" && route(/^\/pa\/payment_intents\/create$/)) return this.createIntent(body);
@@ -166,7 +168,7 @@ export class CardEmulator {
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
     return this.txs
-      .filter((t) => t.card_id === cardId && t.status !== "FAILED" && t.transaction_type !== "REVERSAL")
+      .filter((t) => t.card_id === cardId && t.status !== "FAILED" && t.transaction_type !== "REVERSAL" && t.transaction_type !== "REFUND")
       .filter((t) => interval === "ALL_TIME" || (interval === "MONTHLY" && new Date(t.created_at.replace("+0000", "Z")) >= monthStart))
       .reduce((s, t) => s + t.transaction_amount, 0);
   }
@@ -203,6 +205,8 @@ export class CardEmulator {
     const tx = {
       _emulated: true,
       transaction_id: randomUUID(),
+      card_transaction_lifecycle_id: "",
+      process_result: reason ? "DECLINED" : "APPROVED",
       card_id: card.card_id,
       card_nickname: card.nick_name,
       transaction_amount: Number(b.transaction_amount),
@@ -215,13 +219,29 @@ export class CardEmulator {
       failure_reason: reason ?? undefined,
       created_at: now(),
     };
+    tx.card_transaction_lifecycle_id = tx.transaction_id;
     this.txs.push(tx);
     return tx;
   }
 
   private settleTx(id: string, type: string, path: string) {
-    const tx = this.txs.find((t) => t.transaction_id === id) ?? fail(404, "resource_not_found", `Transaction ${id} not found`, path);
+    const tx = this.txs.find((t) => t.card_transaction_lifecycle_id === id) ?? fail(404, "resource_not_found", `Card transaction lifecycle ${id} not found`, path);
+    if (tx.status === "FAILED" || tx.transaction_type !== "AUTHORIZATION") fail(400, "bad_request", `Lifecycle ${id} is not an open authorization`, path);
     tx.transaction_type = type;
+    tx.status = type === "CLEARING" ? "APPROVED" : "REVERSED";
+    const owner = this.owners.get(tx.card_id);
+    if (type === "REVERSAL" && owner && this.funding) this.funding.debit(owner, -tx.transaction_amount, tx.transaction_currency); // the hold is released
+    return tx;
+  }
+
+  /** A merchant refund: a new credit on the card, as the sandbox posts it. */
+  private refund(b: Obj, path: string) {
+    const card = this.card(b.card_id, path);
+    const owner = this.owners.get(card.card_id);
+    if (owner && this.funding) this.funding.debit(owner, -Number(b.transaction_amount), b.transaction_currency);
+    const id = randomUUID();
+    const tx = { _emulated: true, transaction_id: id, card_transaction_lifecycle_id: id, process_result: "APPROVED", card_id: card.card_id, card_nickname: card.nick_name, transaction_amount: Number(b.transaction_amount), transaction_currency: b.transaction_currency, billing_amount: Number(b.transaction_amount), billing_currency: b.transaction_currency, merchant: { name: b.merchant_info ?? "", category_code: b.merchant_category_code ?? "" }, transaction_type: "REFUND", status: "APPROVED", created_at: now() };
+    this.txs.push(tx);
     return tx;
   }
 

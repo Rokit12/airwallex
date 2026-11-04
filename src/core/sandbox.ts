@@ -75,12 +75,27 @@ export class Sandbox {
     );
   }
 
-  cardCapture(transactionId: string, onBehalfOf?: string) {
-    return this.awx.post(`/simulation/issuing/${transactionId}/capture`, {}, { onBehalfOf });
+  /**
+   * Second phase of a two-phase authorization. The current API version
+   * addresses the card transaction lifecycle (card_transaction_lifecycle_id
+   * from the authorization), not /simulation/issuing/{transaction_id}.
+   */
+  cardCapture(lifecycleId: string, onBehalfOf?: string) {
+    return this.awx.post(`/simulation/issuing/card_transaction_lifecycles/${lifecycleId}/capture`, {}, { onBehalfOf });
   }
 
-  cardReverse(transactionId: string, onBehalfOf?: string) {
-    return this.awx.post(`/simulation/issuing/${transactionId}/reverse`, {}, { onBehalfOf });
+  /** Releases an open authorization without charging it. */
+  cardReverse(lifecycleId: string, onBehalfOf?: string) {
+    return this.awx.post(`/simulation/issuing/card_transaction_lifecycles/${lifecycleId}/reverse`, {}, { onBehalfOf });
+  }
+
+  /** A merchant refund to the card. The sandbox posts it as a new credit on the card. */
+  cardRefund(p: { card_id: string; amount: number; currency: string; mcc?: string; merchant?: string }, onBehalfOf?: string) {
+    return this.awx.post(
+      "/simulation/issuing/refund",
+      { card_id: p.card_id, transaction_amount: p.amount, transaction_currency: p.currency, merchant_category_code: p.mcc, merchant_info: p.merchant },
+      { onBehalfOf },
+    );
   }
 
   /**
