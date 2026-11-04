@@ -75,8 +75,8 @@ The console shares one runtime session, so one kit runs at a time, as it does lo
 ## Test it without an AWS account
 
 ```sh
-npm run aws:build                                  # dist/agentcore: runtime.mjs, kits/kitNN.mjs, chromium/
-CHROMIUM_PACK= PORT=8089 AWX_WORK_DIR=/tmp/awx node dist/agentcore/runtime.mjs
+npm run aws:build                                  # dist/agentcore: runtime.js, kits/kitNN.mjs, chromium/
+CHROMIUM_PACK= PORT=8089 AWX_WORK_DIR=/tmp/awx node dist/agentcore/runtime.js
 curl -s localhost:8089/ping
 curl -s -XPOST localhost:8089/invocations -d '{"action":"run","kit":"03"}'
 curl -s -XPOST localhost:8089/invocations -d '{"action":"events","since":0}'

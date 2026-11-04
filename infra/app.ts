@@ -57,7 +57,7 @@ interface DeskProps extends StackProps {
 class AgentDeskStack extends Stack {
   constructor(scope: Construct, id: string, props: DeskProps) {
     super(scope, id, props);
-    if (!existsSync(join(PACKAGE, "runtime.mjs"))) throw new Error("Build the runtime package first: npm run aws:build");
+    if (!existsSync(join(PACKAGE, "runtime.js"))) throw new Error("Build the runtime package first: npm run aws:build");
 
     // ── Secrets: Airwallex sandbox keys, Metal testnet keys. Seeded out of band (npm run aws:seed).
     const secret = new secrets.Secret(this, "DeskSecret", {
@@ -73,7 +73,7 @@ class AgentDeskStack extends Stack {
       agentRuntimeArtifact: agentcore.AgentRuntimeArtifact.fromCodeAsset({
         path: PACKAGE,
         runtime: agentcore.AgentCoreRuntime.NODE_22,
-        entrypoint: ["runtime.mjs"],
+        entrypoint: ["runtime.js"],
       }),
       networkConfiguration: agentcore.RuntimeNetworkConfiguration.usingPublicNetwork(), // outbound to Airwallex sandbox and Metal testnet
       lifecycleConfiguration: { idleRuntimeSessionTimeout: Duration.hours(1), maxLifetime: Duration.hours(8) },

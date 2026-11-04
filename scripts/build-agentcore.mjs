@@ -3,7 +3,7 @@
  * Builds the AgentCore Runtime deployment package (NODE_22, direct code deploy):
  *
  *   dist/agentcore/
- *     runtime.mjs            the /ping + /invocations server (src/aws/runtime.ts)
+ *     runtime.js             the /ping + /invocations server (src/aws/runtime.ts)
  *     kits/kitNN.mjs         each kit, bundled
  *     ui/                    console page (the runtime serves no HTML, kept for recordings)
  *     node_modules/          playwright(-core) and the metal-agent CLI, pure JavaScript
@@ -41,7 +41,8 @@ const common = {
 };
 
 const kits = readdirSync(join(root, "kits")).filter((d) => /^\d\d-/.test(d)).sort();
-await build({ ...common, entryPoints: { runtime: "src/aws/runtime.ts" }, outdir: out, outExtension: { ".js": ".mjs" } });
+// AgentCore NODE_22 requires a .js entrypoint; package.json "type": "module" makes it ESM.
+await build({ ...common, entryPoints: { runtime: "src/aws/runtime.ts" }, outdir: out });
 await build({
   ...common,
   entryPoints: Object.fromEntries(kits.map((d) => [`kit${d.slice(0, 2)}`, `kits/${d}/run.ts`])),
@@ -87,4 +88,4 @@ const fix = (p) => {
 fix(out);
 
 const size = execFileSync("du", ["-sh", out]).toString().split("\t")[0];
-console.log(`AgentCore package ready: dist/agentcore (${size}); entrypoint runtime.mjs`);
+console.log(`AgentCore package ready: dist/agentcore (${size}); entrypoint runtime.js`);
