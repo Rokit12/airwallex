@@ -28,9 +28,20 @@ import { say, usd } from "../../src/core/narrate.ts";
 import { extract } from "../../src/core/llm.ts";
 import { requestApproval, assertApproved, type Terms } from "../../src/core/approval.ts";
 import { auditPath } from "../../src/core/audit.ts";
+import { acpConfig } from "../../src/merchant/acp-client.ts";
+import { runLive } from "./live.ts";
 
 const SHOPPER = `Can you find me a set of two insulated water bottles? Under $85 including shipping,
 standard delivery is fine, and I want to be able to return them.`;
+
+// Live mode: once the merchant is onboarded with Airwallex Agentic Commerce
+// (npm run aws:merchant), the run shops through Airwallex's merchant MCP endpoint.
+// ACP_MODE=local forces the local storefront below.
+const live = acpConfig();
+if (live) {
+  await runLive(live);
+  process.exit(process.exitCode ?? 0);
+}
 
 const awx = new RailsClient();
 const { store, url, close } = await startStore(awx);

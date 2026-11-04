@@ -206,6 +206,7 @@ The same twelve kits are hosted on **Amazon Bedrock AgentCore Runtime** at [http
 - **The console:** the page is served from a private S3 bucket through Amazon CloudFront (HTTPS, security headers). Operators sign in with Amazon Cognito, which has no self sign-up. API Gateway checks each request's sign-in token, then a Lambda forwards it to the runtime, which has no public endpoint.
 - **Approvals:** recorded under the signed-in person, taken from the verified token. An approval can never come from the agent.
 - **Credentials:** the sandbox keys live in Secrets Manager, and the runtime calls the model through its IAM role, so no model key is stored anywhere.
+- **Kit 10's merchant:** its Create Checkout endpoint, OAuth server and payment webhook run on API Gateway + Lambda with DynamoDB. The merchant is onboarded with Airwallex Agentic Commerce, and product images are served from CloudFront.
 - **Cost:** a USD 100 monthly budget alert guards spend.
 
 ```sh
@@ -227,7 +228,7 @@ The guide lists what each kit needs. Kits whose feature isn't enabled on your ac
 | 5, 7, 8 | Request platform access | Email devhelp@airwallex.com for connected accounts and platform payments |
 | 6 | Platform access + 3 accounts | As above; the kit opens its three employer accounts itself |
 | 9 | Allowlisted Airi CLI access | Sign up at [app.airi.com](https://app.airi.com) and ask devhelp@airwallex.com to allowlist that email for the Airi CLI beta. Install it (`npm install -g @airwallex/airi-cli@beta`), sign in (`airi-cli auth login`), pick an agent-enabled card (`airi-cli payment-methods list`) and set `AIRI_PAYMENT_METHOD_ID`. Until Airi's test mode is released, a mandate uses a real card, so the kit uses the sandbox test card unless you set it |
-| 10 | Agentic Commerce access + public endpoints | Ask devhelp@airwallex.com to enable Agentic Commerce (APIs under `/api/v1/pa/agentic_commerce`). Merchant onboarding then needs a public HTTPS Create Checkout endpoint and an OAuth server that Airwallex can reach. Until those are hosted, the kit's own merchant MCP server runs locally |
+| 10 | Agentic Commerce access + merchant endpoints | Ask devhelp@airwallex.com to enable Agentic Commerce. Deploy to AWS (`npm run aws:deploy`), which hosts the merchant's Create Checkout endpoint, OAuth server and payment webhook. Then run `npm run aws:merchant -- keys`, `-- onboard` and `-- products`, and add a `payment_intent.succeeded` webhook in the Airwallex web app (store its secret with `WEBHOOK_SECRET=… npm run aws:merchant -- webhook`). Until onboarded, the kit runs on its local merchant MCP server |
 | 11 | Funded Metal testnet wallet | See [Metal testnet](#metal-testnet-kits-11-and-12) below |
 | 12 | Metal testnet access | See [Metal testnet](#metal-testnet-kits-11-and-12) below |
 
@@ -265,7 +266,7 @@ Faucet limits: ten grants per IP per UTC day, one per minute. Each grant tops an
 | Show goal, plan, new information, revised decision, resulting balance | The console's GOAL, PLAN, NEW INFORMATION, DECIDE and RESULT sections in every run |
 | Keep amounts, limits, reserves, validation, duplicate protection and state transitions in code | `kits/*/policy.ts`: pure functions with tests (`kits/*/policy.test.ts`); `src/core/lock.ts` for duplicate protection |
 | Use the model to read unstructured text, compare evidence, propose a plan and explain an exception | `src/core/llm.ts`: optional model extraction and explanation (`ANTHROPIC_API_KEY`), validated against a type and checked against the ledger. Without a key, deterministic rules reach the same decisions |
-| Give the model typed tools rather than unrestricted credentials | The model never sees credentials or card data; kit 10's assistant gets typed MCP tools (`src/commerce/server.ts`) |
+| Give the model typed tools rather than unrestricted credentials | The model never sees credentials or card data; kit 10's assistant gets Airwallex's typed ACP tools, and pays with a delegate token limited to one session and the approved total |
 | Bind each approval to amount, currency, counterparty, terms and evidence | `src/core/approval.ts`: an approval is a SHA-256 hash of the exact terms shown; any change invalidates it |
 | A person approves; the agent never approves its own proposal | `src/core/approval.ts`: `assertApproved()` refuses an approval attributed to the proposing agent, and approvals only come through the approval channel, never from text the agent read |
 | Treat what the agent reads as data, not instructions | Kit 4's forwarded cardholder statement hides instructions to accept, refund and pay an IBAN, "already approved by the operator". They are flagged (`src/core/untrusted.ts`), the model can only return fixed evidence fields, code decides, and the run checks none of it happened |
@@ -310,7 +311,8 @@ Status on our US sandbox account: **every Airwallex call in all twelve kits runs
 | 5 | Connected accounts (KYC, submit, activate), cards issued on each customer's behalf, authorizations, bridge transfers, fee charges | – |
 | 6, 7 | Connected accounts, payroll and loan flows, FX and payouts inside each customer's own account | – |
 | 8 | Connected accounts, seller payouts, reserves, refunds | – |
-| 9, 10 | Browser shopping, merchant MCP checkout, live card payments and declines | Kit 9: Airi CLI card credentials (wired to the real CLI; uses the sandbox test card until Airi releases test mode). Kit 10: Airwallex's merchant-side Agentic Commerce (access is enabled; onboarding needs a public HTTPS Create Checkout endpoint and an OAuth server, so the local merchant MCP runs meanwhile) |
+| 9 | Browser shopping, live card payments and declines | Airi CLI card credentials (wired to the real CLI; uses the sandbox test card until Airi releases test mode) |
+| 10 | Airwallex Agentic Commerce: onboarding, catalogue ingest, the merchant MCP endpoint, checkout sessions priced by the merchant, delegate payment tokens, payments, the declined card and retry | Nothing, once the merchant is onboarded (its endpoints run on AWS). Before onboarding, the kit uses its local merchant MCP server |
 | 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee | Metal spending limits for the kit's 200+ payments (each on-chain payment takes seconds and faucet-limited gas; `npm run metal:check` proves the same limits live: bind, pay under, refused over) |
 | 12 | Card pre-authorization holds, increments, single captures, cancels · Metal clearing on testnet: deposits, signed running totals, withdrawals | Nothing when Metal's clearing service is reachable. A live run takes 15–20 minutes because withdrawals wait for Metal's challenge windows; `METAL=emulated` runs it in 30 seconds |
 

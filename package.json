@@ -24,7 +24,7 @@
     "record": "tsx src/console/record.ts",
     "build:replay": "tsx src/console/build-replay.ts",
     "setup:browser": "playwright install chromium",
-    "test": "tsx --test kits/*/policy.test.ts src/core/*.test.ts src/aws/*.test.ts",
+    "test": "tsx --test kits/*/policy.test.ts src/core/*.test.ts src/aws/*.test.ts src/merchant/*.test.ts",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm test",
     "metal:withdraw": "tsx src/metal/withdraw.ts",
@@ -33,7 +33,8 @@
     "aws:synth": "npm run aws:build && cdk synth --app \"tsx infra/app.ts\"",
     "aws:deploy": "npm run aws:build && cdk deploy --app \"tsx infra/app.ts\" --all --outputs-file infra/outputs.json",
     "aws:seed": "tsx scripts/aws-seed-secret.ts",
-    "aws:operator": "tsx scripts/aws-add-operator.ts"
+    "aws:operator": "tsx scripts/aws-add-operator.ts",
+    "aws:merchant": "tsx scripts/aws-merchant.ts"
   },
   "license": "MIT",
   "devDependencies": {
@@ -56,7 +57,9 @@
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1161.0",
+    "@aws-sdk/client-dynamodb": "^3.1161.0",
     "@aws-sdk/client-secrets-manager": "^3.1161.0",
+    "@aws-sdk/lib-dynamodb": "^3.1161.0",
     "@metalntwx/metal-agent": "^0.3.3",
     "@metalntwx/metal-pay": "^0.3.4",
     "@sparticuz/chromium-min": "^153.0.0",

@@ -8,3 +8,4 @@ dist/
 .cache/
 cdk.out/
 infra/outputs.json
+infra/merchant.json

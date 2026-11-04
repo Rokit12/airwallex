@@ -2,30 +2,56 @@
 
 **Track:** Agentic Commerce
 
-A merchant sells through Claude. Its 120-product catalogue and checkout are exposed as MCP tools: `search_products`, `get_product`, `create_checkout`, `get_checkout`.
+A merchant, Trailhead Outfitters, sells through shoppers' AI assistants on **Airwallex Agentic Commerce**. The merchant is onboarded with Airwallex, and its 120 products are in Airwallex's catalogue. Shoppers' assistants buy through Airwallex's merchant MCP endpoint. The merchant's own endpoints run on AWS:
+
+| Merchant endpoint | What it does |
+|---|---|
+| `POST /checkout` (Create Checkout) | Airwallex calls it to price a cart. It verifies Airwallex's HMAC signature on the raw body and rejects stale timestamps. It answers with stock per line, delivery and pickup options covering every line, and totals in minor units. Prices come from code (`src/merchant/acp.ts`), never from the assistant. |
+| OAuth server (`/oauth/...`) | Discovery, dynamic client registration, guest sign-in, and authorization code with PKCE. It issues RS256 access tokens that Airwallex verifies against the published JWKS. |
+| `POST /webhooks/airwallex` | Receives `payment_intent.succeeded`. It verifies the webhook's own signature, ignores repeated deliveries by event id, and marks the order paid with the shopper's delivery choice. |
+| `/shop/product/{sku}`, `/shop/orders/{id}` | The catalogue's product links and each order's page. |
 
 ## What happens
 
-1. **Search.** Claude searches and refines with the merchant's tools and reads the current price.
-2. **Confirm.** The shopper confirms merchant, product, quantity, delivery and total. The checkout is created with an idempotency key; a repeated call returns the same checkout.
-3. **Pay.** The shopper enters a card on the hosted payment page. Card details never pass through Claude.
-4. **Exception.** The first card is declined (Airwallex's documented test card at USD 80.51). The agent reads the checkout, sees no order and no charge, and sends the shopper back to the same checkout rather than creating a new one.
-5. **Result.** The second card succeeds; the merchant returns an order number and the payment outcome.
+1. **Connect.** The assistant opens Airwallex's merchant MCP endpoint. It names the merchant's OAuth server, and the shopper signs in there as a guest.
+2. **Search.** `explore_products` searches Airwallex's copy of the catalogue. The agent keeps the best matches for the request, with returns, under the budget.
+3. **Price.** `create_checkout_session` makes Airwallex call the merchant's Create Checkout endpoint on AWS. The agent picks the delivery option the shopper asked for, and Airwallex adds the delivery line to the total.
+4. **Confirm.** The shopper approves the exact merchant, product, quantity, delivery, total and checkout session. The total is re-read before paying and must still match.
+5. **Pay.** The shopper's checkout UI tokenizes the card with Airwallex (`create_delegate_payment_token`). The agent only gets a token limited to this session and the approved total, so card numbers never reach it.
+6. **Exception.** The first card is blocked by Airwallex's risk check. The agent reads the session: it's still waiting for payment, with no completed order and no charge. So the shopper pays again on the same session, not a new one.
+7. **Result.** The second card succeeds. The agent checks Airwallex has exactly one successful payment for the order, and that the merchant's webhook has marked it paid.
 
 ## Live or emulated
 
-Test storefront MCP server and hosted payment page. Payments are live Airwallex payment intents, confirmed with documented test cards (a declined card comes back as Airwallex's own `issuer_declined`). On an account without native API access for payments, card confirmation falls back to the card emulator. Airwallex has enabled Agentic Commerce on the account. Its own merchant MCP endpoint replaces the store's once the merchant is onboarded, which needs a public HTTPS Create Checkout endpoint and an OAuth server that Airwallex can reach.
+Fully live on Airwallex Agentic Commerce once the merchant is onboarded (see below):
+- **On Airwallex:** onboarding, catalogue ingest, the merchant MCP endpoint and its tools, checkout sessions priced by the merchant, delegate payment tokens, payments, the declined card and the retry.
+- **On AWS:** the merchant's endpoints.
 
-## Shop from Claude yourself
+Before onboarding, `npm run kit10` falls back to the kit's own local merchant MCP server and hosted payment page, with live Airwallex payment intents. `ACP_MODE=local` forces that mode.
 
-The guide asks for the merchant's MCP endpoint to be configured in Claude locally. Start the storefront and add its endpoint:
+## Set up the live merchant
+
+After `npm run aws:deploy` ([docs/AWS.md](../../docs/AWS.md)):
 
 ```sh
-npm run store                # storefront on :4320, MCP endpoint at /mcp
-claude mcp add-json trailhead-store '{"type":"http","url":"http://localhost:4320/mcp"}'
+npm run aws:merchant -- keys        # checkout HMAC secret + OAuth signing key, into Secrets Manager
+npm run aws:merchant -- onboard     # POST /pa/agentic_commerce/onboard; prints the ACP MCP endpoint
+npm run aws:merchant -- products    # 120 products in GMC attributes, POST /pa/agentic_commerce/products
 ```
 
-Then ask Claude to find and buy a product. It searches the catalogue with `search_products` (it doesn't crawl the site), confirms the terms with you, and gives you the hosted payment link for your card. Use `4035501000000008` to pay, or the declined test card to see the exception. Once those endpoints are hosted and the merchant is onboarded, upload the catalogue through Airwallex's ingest API and point Claude at Airwallex's merchant-specific MCP endpoint instead.
+Then, in the Airwallex web app, go to **Developer → Webhooks** and add a `payment_intent.succeeded` webhook to `<MerchantUrl>/webhooks/airwallex`. Store its secret with `WEBHOOK_SECRET=… npm run aws:merchant -- webhook`.
+
+## Shop from Claude Desktop
+
+Add Airwallex's merchant MCP endpoint (printed by `onboard`, saved in `infra/merchant.json`) to `claude_desktop_config.json`:
+
+```json
+{ "mcpServers": { "trailhead-outfitters": { "command": "npx", "args": ["-y", "mcp-remote", "https://mcp.sandbox.airwallex.com/pa/ai/<merchantId>/acp/mcp"] } } }
+```
+
+Restart Claude Desktop, sign in as a guest on the Trailhead Outfitters page that opens, and ask for "a set of two insulated water bottles under $85 with returns". Pay with the test card `4035501000000008`, or use `4646464646464644` to see a declined card.
+
+The local storefront still works too: `npm run store`, then `claude mcp add-json trailhead-store '{"type":"http","url":"http://localhost:4320/mcp"}'`.
 
 ## Run it
 
@@ -36,6 +62,9 @@ npm run console       # or pick kit 10 in the web console
 
 ## Where the logic is
 
-No separate policy module: the flow's safety rules (confirm before pay, idempotent checkout, check before retry) are in `run.ts` and the store (`src/commerce/`).
-
-- `run.ts`: the demo flow; storefront in `src/commerce/`
+- `live.ts`: the shopper's assistant on Airwallex's MCP endpoint
+- `run.ts`: chooses live or local, plus the local flow
+- `src/merchant/acp.ts`: the merchant's pure rules: signature check, pricing, fulfillment rules, catalogue in GMC attributes
+- `src/merchant/oauth.ts`: discovery, redirect policy, PKCE, RS256 tokens, JWKS
+- `src/aws/merchant.ts`: the merchant's Lambda (Create Checkout, OAuth, webhook, pages)
+- `src/merchant/merchant.test.ts`: tests for all of the above

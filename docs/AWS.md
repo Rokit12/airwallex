@@ -19,7 +19,11 @@ browser ──► CloudFront ─► S3                    console page + config.
           ├─ Claude on Bedrock                  reads and explains; never sets amounts
           ├─ Secrets Manager                    Airwallex sandbox + Metal testnet keys
           ├─ Airwallex sandbox API, Metal testnet
-          └─ headless Chromium                  kits 9 and 10 shop the test store
+          └─ headless Chromium                  kit 9 shops the test store
+
+Airwallex ──► API Gateway (public) ──► Lambda (kit 10 merchant) ──► DynamoDB
+                Create Checkout (HMAC-signed), OAuth server for shoppers,
+                payment webhook, product and order pages
 ```
 
 | Rule from the guide | How it holds on AWS |
@@ -59,6 +63,10 @@ npm run aws:operator -- you@example.com                  # invites you; Cognito 
 
 - `npm run aws:seed -- --dry-run` lists what would be sent, without the values.
 - The Anthropic key is not sent, because on AWS the model is Bedrock.
+
+## Kit 10's merchant on Airwallex Agentic Commerce
+
+After the deploy, run `npm run aws:merchant -- keys`, `-- onboard` and `-- products`. Then add the `payment_intent.succeeded` webhook in the Airwallex web app, and store its secret with `WEBHOOK_SECRET=… npm run aws:merchant -- webhook`. [Kit 10's README](../kits/10-merchant-agentic-checkout/README.md) has the details and the Claude Desktop setup.
 
 ## What is different from a local run
 

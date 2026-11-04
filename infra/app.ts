@@ -18,7 +18,7 @@
  * Context: region (default us-west-2), alertEmail (budget and alarm emails),
  * modelId / fallbackModelId (Bedrock inference profiles), budgetUsd (100).
  */
-import { App, CfnOutput, Duration, RemovalPolicy, Stack, type StackProps, SecretValue } from "aws-cdk-lib";
+import { App, CfnOutput, type CfnResource, Duration, RemovalPolicy, Stack, type StackProps, SecretValue } from "aws-cdk-lib";
 import * as agentcore from "aws-cdk-lib/aws-bedrockagentcore";
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
@@ -27,6 +27,7 @@ import * as budgets from "aws-cdk-lib/aws-budgets";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import { S3BucketOrigin } from "aws-cdk-lib/aws-cloudfront-origins";
 import * as cognito from "aws-cdk-lib/aws-cognito";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction, OutputFormat } from "aws-cdk-lib/aws-lambda-nodejs";
@@ -35,7 +36,8 @@ import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import * as secrets from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -45,6 +47,20 @@ const PACKAGE = join(ROOT, "dist", "agentcore");
 function defaultModels(region: string): [string, string] {
   const geo = region.startsWith("eu-") ? "eu" : region === "ap-southeast-2" ? "au" : "us";
   return [`${geo}.anthropic.claude-sonnet-5`, `${geo}.anthropic.claude-sonnet-4-5-20250929-v1:0`];
+}
+/** agent-desk-console-<hash of the runtime package> (AgentCore needs 33+ characters). */
+function consoleSessionId(): string {
+  const h = createHash("sha256");
+  const walk = (dir: string) => {
+    for (const f of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (f.name === "chromium" || f.name === "node_modules") continue; // pinned, large
+      const p = join(dir, f.name);
+      if (f.isDirectory()) walk(p);
+      else h.update(f.name).update(readFileSync(p));
+    }
+  };
+  walk(PACKAGE);
+  return `agent-desk-console-${h.digest("hex").slice(0, 24)}`;
 }
 const foundationModel = (profileId: string) => profileId.replace(/^(us|eu|au|apac|global)\./, "");
 
@@ -156,7 +172,9 @@ class AgentDeskStack extends Stack {
       architecture: lambda.Architecture.ARM_64,
       timeout: Duration.seconds(29),
       memorySize: 256,
-      environment: { AGENT_RUNTIME_ARN: runtime.agentRuntimeArn },
+      // A new package gets a new console session, so the console never keeps talking to a
+      // session started on the previous code (AgentCore keeps a session's microVM alive until idle).
+      environment: { AGENT_RUNTIME_ARN: runtime.agentRuntimeArn, CONSOLE_SESSION_ID: consoleSessionId() },
       bundling: {
         format: OutputFormat.ESM,
         target: "node22",
@@ -204,6 +222,55 @@ class AgentDeskStack extends Stack {
       ],
     });
 
+    // ── Kit 10: the merchant's endpoints for Airwallex Agentic Commerce (public: Airwallex and
+    // the shopper's assistant call them). Create Checkout and webhooks verify Airwallex's
+    // HMAC signatures; the OAuth server signs RS256 tokens with a key from Secrets Manager.
+    const merchantSecret = new secrets.Secret(this, "MerchantSecret", {
+      description: "Kit 10 merchant: checkout HMAC secret, webhook secret, OAuth signing key (JSON). Seeded by npm run aws:merchant -- keys.",
+      secretStringValue: SecretValue.unsafePlainText("{}"), // placeholder; real values are generated out of band
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    const merchantTable = new dynamodb.Table(this, "MerchantState", {
+      partitionKey: { name: "pk", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      timeToLiveAttribute: "expires_at",
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    const merchantFn = new NodejsFunction(this, "MerchantEndpoints", {
+      entry: join(ROOT, "src", "aws", "merchant.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      timeout: Duration.seconds(10),
+      memorySize: 256,
+      environment: { MERCHANT_TABLE: merchantTable.tableName, MERCHANT_SECRET_ARN: merchantSecret.secretArn, SITE_URL: consoleUrl },
+      bundling: {
+        format: OutputFormat.ESM,
+        target: "node22",
+        externalModules: [],
+        mainFields: ["module", "main"],
+        banner: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);",
+      },
+      logGroup: new logs.LogGroup(this, "MerchantLogs", { retention: logs.RetentionDays.ONE_MONTH, removalPolicy: RemovalPolicy.DESTROY }),
+    });
+    merchantTable.grantReadWriteData(merchantFn);
+    merchantSecret.grantRead(merchantFn);
+    const merchantApi = new apigw.HttpApi(this, "MerchantApi", {
+      apiName: "trailhead-merchant",
+      defaultIntegration: new HttpLambdaIntegration("Merchant", merchantFn),
+    });
+    const merchantStage = merchantApi.defaultStage!.node.defaultChild as apigw.CfnStage;
+    merchantStage.defaultRouteSettings = { throttlingBurstLimit: 20, throttlingRateLimit: 10 };
+
+    // Kit 10 on the runtime shops live through Airwallex's merchant MCP endpoint once the merchant is
+    // onboarded (npm run aws:merchant -- onboard writes infra/merchant.json; or pass -c acpMcpUrl=...).
+    const acpMcpUrl: string | undefined =
+      this.node.tryGetContext("acpMcpUrl") ??
+      (existsSync(join(ROOT, "infra", "merchant.json")) ? JSON.parse(readFileSync(join(ROOT, "infra", "merchant.json"), "utf8")).acp_mcp_url : undefined);
+    const cfnRuntime = runtime.node.defaultChild as CfnResource;
+    cfnRuntime.addPropertyOverride("EnvironmentVariables.MERCHANT_URL", merchantApi.apiEndpoint);
+    if (acpMcpUrl) cfnRuntime.addPropertyOverride("EnvironmentVariables.ACP_MCP_URL", acpMcpUrl);
+
     // ── Cost guard, as in the reference builds.
     if (props.alertEmail) {
       const subscribers = [{ subscriptionType: "EMAIL", address: props.alertEmail }];
@@ -223,6 +290,9 @@ class AgentDeskStack extends Stack {
     new CfnOutput(this, "UserPoolClientId", { value: client.userPoolClientId });
     new CfnOutput(this, "SecretArn", { value: secret.secretArn });
     new CfnOutput(this, "RuntimeArn", { value: runtime.agentRuntimeArn });
+    new CfnOutput(this, "ConsoleSessionId", { value: consoleSessionId() });
+    new CfnOutput(this, "MerchantUrl", { value: merchantApi.apiEndpoint });
+    new CfnOutput(this, "MerchantSecretArn", { value: merchantSecret.secretArn });
   }
 }
 
