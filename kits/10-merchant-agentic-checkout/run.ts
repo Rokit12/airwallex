@@ -14,9 +14,10 @@
  * Connect Claude to the same tools: `npm run store`, then
  *   claude mcp add-json trailhead-store '{"type":"http","url":"http://localhost:4320/mcp"}'
  *
- * Airwallex's own merchant MCP endpoint and catalogue upload are in the draft
- * Merchant Onboarding API and need merchant-side access; this storefront
- * implements the same flow until then.
+ * Airwallex has enabled Agentic Commerce on the account. Onboarding the merchant
+ * (Airwallex's own merchant MCP endpoint and catalogue ingest) also needs a
+ * public HTTPS Create Checkout endpoint and an OAuth server that Airwallex can
+ * reach; this local storefront implements the same flow until those are hosted.
  */
 import { createHash } from "node:crypto";
 import { launchBrowser } from "../../src/core/browser.ts";

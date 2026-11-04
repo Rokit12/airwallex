@@ -14,7 +14,7 @@ A merchant sells through Claude. Its 120-product catalogue and checkout are expo
 
 ## Live or emulated
 
-Test storefront MCP server and hosted payment page. Payments are live Airwallex payment intents, confirmed with documented test cards (a declined card comes back as Airwallex's own `issuer_declined`). On an account without native API access for payments, card confirmation falls back to the card emulator. Airwallex's own merchant MCP endpoint replaces the store's once merchant-side Agentic Commerce is enabled.
+Test storefront MCP server and hosted payment page. Payments are live Airwallex payment intents, confirmed with documented test cards (a declined card comes back as Airwallex's own `issuer_declined`). On an account without native API access for payments, card confirmation falls back to the card emulator. Airwallex has enabled Agentic Commerce on the account. Its own merchant MCP endpoint replaces the store's once the merchant is onboarded, which needs a public HTTPS Create Checkout endpoint and an OAuth server that Airwallex can reach.
 
 ## Shop from Claude yourself
 
@@ -25,7 +25,7 @@ npm run store                # storefront on :4320, MCP endpoint at /mcp
 claude mcp add-json trailhead-store '{"type":"http","url":"http://localhost:4320/mcp"}'
 ```
 
-Then ask Claude to find and buy a product. It searches the catalogue with `search_products` (it doesn't crawl the site), confirms the terms with you, and gives you the hosted payment link for your card. Use `4035501000000008` to pay, or the declined test card to see the exception. When Airwallex grants merchant-side Agentic Commerce access, upload the catalogue in the format Airwallex provides and point Claude at Airwallex's merchant-specific MCP endpoint instead.
+Then ask Claude to find and buy a product. It searches the catalogue with `search_products` (it doesn't crawl the site), confirms the terms with you, and gives you the hosted payment link for your card. Use `4035501000000008` to pay, or the declined test card to see the exception. Once those endpoints are hosted and the merchant is onboarded, upload the catalogue through Airwallex's ingest API and point Claude at Airwallex's merchant-specific MCP endpoint instead.
 
 ## Run it
 

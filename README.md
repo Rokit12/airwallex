@@ -227,7 +227,7 @@ The guide lists what each kit needs. Kits whose feature isn't enabled on your ac
 | 5, 7, 8 | Request platform access | Email devhelp@airwallex.com for connected accounts and platform payments |
 | 6 | Platform access + 3 accounts | As above; the kit opens its three employer accounts itself |
 | 9 | Allowlisted Airi CLI access | Sign up at [app.airi.com](https://app.airi.com) and ask devhelp@airwallex.com to allowlist that email for the Airi CLI beta. Install it (`npm install -g @airwallex/airi-cli@beta`), sign in (`airi-cli auth login`), pick an agent-enabled card (`airi-cli payment-methods list`) and set `AIRI_PAYMENT_METHOD_ID`. Until Airi's test mode is released, a mandate uses a real card, so the kit uses the sandbox test card unless you set it |
-| 10 | Merchant-side access | Email devhelp@airwallex.com. The kit's own merchant MCP server runs locally meanwhile |
+| 10 | Agentic Commerce access + public endpoints | Ask devhelp@airwallex.com to enable Agentic Commerce (APIs under `/api/v1/pa/agentic_commerce`). Merchant onboarding then needs a public HTTPS Create Checkout endpoint and an OAuth server that Airwallex can reach. Until those are hosted, the kit's own merchant MCP server runs locally |
 | 11 | Funded Metal testnet wallet | See [Metal testnet](#metal-testnet-kits-11-and-12) below |
 | 12 | Metal testnet access | See [Metal testnet](#metal-testnet-kits-11-and-12) below |
 
@@ -308,7 +308,7 @@ Status on our US sandbox account: **every Airwallex call in all twelve kits runs
 | 5 | Connected accounts (KYC, submit, activate), cards issued on each customer's behalf, authorizations, bridge transfers, fee charges | – |
 | 6, 7 | Connected accounts, payroll and loan flows, FX and payouts inside each customer's own account | – |
 | 8 | Connected accounts, seller payouts, reserves, refunds | – |
-| 9, 10 | Browser shopping, merchant MCP checkout, live card payments and declines | Kit 9: Airi CLI card credentials (wired to the real CLI; uses the sandbox test card until Airi releases test mode). Kit 10: Airwallex's merchant-side Agentic Commerce (awaiting access; the local merchant MCP runs meanwhile) |
+| 9, 10 | Browser shopping, merchant MCP checkout, live card payments and declines | Kit 9: Airi CLI card credentials (wired to the real CLI; uses the sandbox test card until Airi releases test mode). Kit 10: Airwallex's merchant-side Agentic Commerce (access is enabled; onboarding needs a public HTTPS Create Checkout endpoint and an OAuth server, so the local merchant MCP runs meanwhile) |
 | 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee | Metal spending limits for the kit's 200+ payments (each on-chain payment takes seconds and faucet-limited gas; `npm run metal:check` proves the same limits live: bind, pay under, refused over) |
 | 12 | Card pre-authorization holds, increments, single captures, cancels · Metal clearing on testnet: deposits, signed running totals, withdrawals | Nothing when Metal's clearing service is reachable. A live run takes 15–20 minutes because withdrawals wait for Metal's challenge windows; `METAL=emulated` runs it in 30 seconds |
 
