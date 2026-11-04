@@ -80,12 +80,15 @@ export async function openConnectedAccount(awx: AirwallexClient, c: CustomerSpec
   await awx.post(`/accounts/${id}/submit`, {});
   await sleep(2000);
   await awx.post(`/simulation/accounts/${id}/update_status`, { next_status: "ACTIVE", force: true });
+  // ACTIVE is the ready signal Airwallex exposes (GET /accounts/{id}, or the account.connected
+  // webhook); pricing follows some time after it, and the platform client times its retries from here.
   let status = "";
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 40; i++) {
     status = (await awx.get(`/accounts/${id}`)).status;
     if (status === "ACTIVE") break;
     await sleep(1500);
   }
+  if (status !== "ACTIVE") throw new Error(`Connected account ${id} for ${c.name} is ${status}, not ACTIVE, after 60 s: not moving money for it`);
   return { id, name: c.name, status };
 }
 

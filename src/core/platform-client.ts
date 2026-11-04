@@ -64,12 +64,15 @@ export class PlatformClient extends AirwallexClient {
       return res;
     } catch (err) {
       if (err instanceof AwxError && FEE_UNCONFIGURED.has(err.code) && opts.onBehalfOf && method === "POST" && (path === "/fx/conversions/create" || path === "/transfers/create")) {
-        // Airwallex applies pricing to a new connected account a while after it is created (measured:
-        // FX after ~2.2 min, payouts after ~3.2 min). The call was refused, so nothing happened: retry with backoff
-        // and a fresh request_id, then fall back to routing through the platform.
+        // Airwallex applies pricing to a new connected account a while after it becomes ACTIVE, and
+        // there is no status or webhook that marks pricing as ready (Airwallex, Nov 2026; measured:
+        // FX after ~2.2 min, payouts after ~3.2 min). As Airwallex advised: confirm the account is
+        // ACTIVE (GET /accounts/{id}), start the retries from there with backoff and a fresh
+        // request_id (the refused call did nothing), then fall back to routing through the platform.
         const what = path === "/fx/conversions/create" ? "FX" : "payout";
         const budgetMs = Number(process.env.FEE_WAIT_SECONDS ?? 300) * 1000;
-        say.step(`Airwallex has not applied ${what} pricing to this new customer account yet (${err.code}, trace ${err.traceId ?? "n/a"}); retrying for up to ${Math.round(budgetMs / 1000)} s`);
+        await this.untilActive(opts.onBehalfOf);
+        say.step(`Airwallex has not applied ${what} pricing to this new customer account yet (${err.code}, trace ${err.traceId ?? "n/a"}); the account is ACTIVE, retrying for up to ${Math.round(budgetMs / 1000)} s`);
         const start = Date.now();
         for (let wait = 10_000; Date.now() - start + wait <= budgetMs; wait = Math.min(wait * 2, 60_000)) {
           await sleep(wait);
@@ -95,6 +98,21 @@ export class PlatformClient extends AirwallexClient {
         return this.emulate<T>(method, path, opts);
       }
       throw err;
+    }
+  }
+
+  /**
+   * Waits until the connected account reports ACTIVE, the point from which
+   * Airwallex says to time the pricing retries. Status is the only ready signal
+   * (the account.connected webhook carries the same fact).
+   */
+  private async untilActive(accountId: string, maxMs = 120_000) {
+    const start = Date.now();
+    for (;;) {
+      const status = (await super.call<any>("GET", `/accounts/${accountId}`, {})).status;
+      if (status === "ACTIVE") return;
+      if (Date.now() - start > maxMs) throw new Error(`Connected account ${accountId} is ${status}, not ACTIVE, after ${Math.round(maxMs / 1000)} s`);
+      await sleep(5000);
     }
   }
 
