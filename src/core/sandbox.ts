@@ -121,6 +121,21 @@ export class Sandbox {
     }
   }
 
+  /**
+   * Move a transfer to `nextStatus` and confirm it by reading it back. The sandbox can answer 200 to a
+   * transition without applying it, so a transfer still short of the status gets the transition again.
+   */
+  async advanceTransfer(transferId: string, nextStatus: "SENT" | "PAID", onBehalfOf?: string, timeoutMs = 45_000): Promise<string> {
+    const until = Date.now() + timeoutMs;
+    let status = "";
+    for (let round = 0; ; round++) {
+      if (round % 4 === 0) await this.transferTransition(transferId, nextStatus, undefined, onBehalfOf).catch(() => undefined);
+      status = (await this.awx.get(`/transfers/${transferId}`, { onBehalfOf })).status;
+      if (status === nextStatus || status === "CANCELLED" || Date.now() > until) return status;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+
   createDispute(p: { payment_intent_id: string; stage: "RFI" | "CHARGEBACK" | "PRE_CHARGEBACK" | "PRE_ARBITRATION"; reason_code: string; due_at: string; amount?: number; comment?: string }) {
     return this.awx.post("/simulation/pa/payment_disputes/create", p);
   }

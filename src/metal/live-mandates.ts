@@ -47,7 +47,7 @@ function lines() {
 export class LiveMandates implements MandateChain {
   readonly mode = "live" as const;
   readonly network = `metal-testnet (eip155:${METAL.chainId}) · live`;
-  readonly concurrency = Number(process.env.METAL_CONCURRENCY ?? 12);
+  readonly concurrency = Number(process.env.METAL_CONCURRENCY ?? 10);
   private readonly target: any;
   private readonly client: any;
   private readonly factory: Address;
@@ -216,9 +216,9 @@ export class LiveMandates implements MandateChain {
         outcome = await mandatePull(this.target, { credentialPath: m.credential, mandateKeyFile: m.keyFile, to, amount: toBase(cents), paymentId, keyPath: opts.recordRefusal ? m.ownerKey : undefined, recordRefusal: Boolean(opts.recordRefusal) }, l.print);
       } catch (err) {
         // A pull that was not sent, or whose answer was lost, is sent again under the same payment id: Metal pays it at most once.
-        if (attempt < 8 && /could not be reached|fetch failed|timed? ?out|ECONNRESET|429|503|sending it failed|the same pull sends it|send it again/i.test(String((err as Error).message))) {
+        if (attempt < 12 && /could not be reached|fetch failed|timed? ?out|ECONNRESET|429|503|sending it failed|the same pull sends it|send it again/i.test(String((err as Error).message))) {
           this.retries += 1;
-          await new Promise((r) => setTimeout(r, 800 * attempt + Math.random() * 1200));
+          await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** Math.min(attempt, 4), 12_000) + Math.random() * 1500));
           continue;
         }
         throw err;

@@ -281,14 +281,8 @@ try {
   say.ok(`FX ${conv.status}: bought EUR ${conv.buy_amount} (invoice ${LICENCE.amount} + SWIFT fee ${swiftFee}) for USD ${conv.sell_amount} @ ${conv.client_rate ?? quote.client_rate}`);
   const ben = await awx.post("/beneficiaries/create", { request_id: newRequestId(), ...LICENCE.beneficiary });
   const tr = await awx.post("/transfers/create", { request_id: newRequestId(), beneficiary_id: ben.id ?? ben.beneficiary_id, transfer_amount: String(LICENCE.amount), transfer_currency: "EUR", source_currency: "EUR", transfer_method: "SWIFT", reference: LICENCE.invoice, reason: "professional_business_services" });
-  await sb.transferTransition(tr.id, "SENT");
-  await sb.transferTransition(tr.id, "PAID").catch(() => {});
-  let status = "";
-  for (let i = 0; i < 8; i++) {
-    status = (await awx.get(`/transfers/${tr.id}`)).status;
-    if (status === "PAID") break;
-    await sleep(1500);
-  }
+  await sb.advanceTransfer(tr.id, "SENT");
+  const status = await sb.advanceTransfer(tr.id, "PAID");
   say.ok(`licence ${LICENCE.invoice}: EUR ${LICENCE.amount} to ${LICENCE.licensor} by SWIFT (fee ${tr.fee_amount ?? swiftFee}) → ${status}`);
 
   // ── Result ───────────────────────────────────────────────────────────────
