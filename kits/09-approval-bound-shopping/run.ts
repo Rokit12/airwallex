@@ -26,8 +26,9 @@ import { requestApproval, assertApproved, type Terms } from "../../src/core/appr
 import { auditPath } from "../../src/core/audit.ts";
 import { choose, diffTerms, afterUnconfirmedSubmit, type Intent, type Offer, type ShownTerms } from "./policy.ts";
 
-const SHOPPER_REQUEST = `Hi! I need a 2-person backpacking tent for a trip next weekend.
-Keep it under $260 all-in, it has to arrive within 8 business days,
+// Under USD 200 all-in: Airi's per-transaction limit for agent payments is USD 200 (Airwallex risk control).
+const SHOPPER_REQUEST = `Hi! I need a 3-person tent for a family camping trip next weekend.
+Keep it under $200 all-in, it has to arrive within 8 business days,
 and I only buy from places that take returns.`;
 
 const awx = new RailsClient();
@@ -48,7 +49,7 @@ try {
     "Extract JSON: need (string), budget (number, total including delivery), arriveWithinDays (number), returnsRequired (boolean).",
     SHOPPER_REQUEST,
     (v: any): v is Intent => v && typeof v.need === "string" && typeof v.budget === "number" && typeof v.arriveWithinDays === "number" && typeof v.returnsRequired === "boolean",
-    () => ({ need: "2-person backpacking tent", budget: 260, arriveWithinDays: 8, returnsRequired: true }),
+    () => ({ need: "3-person tent", budget: 200, arriveWithinDays: 8, returnsRequired: true }),
   );
   say.step(`intent: ${intent.need}, ≤ ${usd(intent.budget)} all-in, arrive ≤ ${intent.arriveWithinDays} business days, returns ${intent.returnsRequired ? "required" : "optional"}`);
 
@@ -95,7 +96,7 @@ try {
   if (!approval) throw new Error("Shopper did not approve");
 
   say.beat("new information", "The merchant updates the tent's price before payment.");
-  store.setPrice(pick.offer.sku, 249);
+  store.setPrice(pick.offer.sku, pick.offer.price + 4); // e.g. 185 → 189: still inside the budget, so the shopper is asked again
   await page.reload(); // always re-read the final total before paying
   const now = await shown();
   const changes = diffTerms(approvedTerms, now);

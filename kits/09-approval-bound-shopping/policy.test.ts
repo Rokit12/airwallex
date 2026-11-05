@@ -14,6 +14,14 @@ test("picks the best-rated tent that arrives in time and fits the budget", () =>
   assert.ok(rejected.some((r) => r.sku === "TRL-1002" && /over budget/.test(r.why)));
 });
 
+test("a 3-person tent under USD 200 all-in (Airi's per-payment limit): best-rated that fits, 2-person tents rejected", () => {
+  const { pick, rejected } = choose(offers, [...DELIVERY], { need: "3-person tent", budget: 200, arriveWithinDays: 8, returnsRequired: true });
+  assert.equal(pick?.offer.sku, "TRL-1005");
+  assert.equal(pick?.total, 191);
+  assert.ok(rejected.some((r) => r.sku === "TRL-1006" && /over budget/.test(r.why)));
+  assert.ok(rejected.some((r) => r.sku === "TRL-1001" && /3-person/.test(r.why)));
+});
+
 test("a price change after approval is detected field by field", () => {
   const a = { merchant: "M", sku: "TRL-1001", product: "Summit", delivery: "STANDARD", total: 238, currency: "USD" };
   assert.deepEqual(diffTerms(a, { ...a, total: 255 }), ["total: 238 → 255"]);

@@ -318,7 +318,7 @@ Status on our US sandbox account: **every Airwallex call in all fifteen kits run
 | 5 | Connected accounts (KYC, submit, activate), cards issued on each customer's behalf, authorizations, bridge transfers, fee charges | – |
 | 6, 7 | Connected accounts, payroll and loan flows, FX and payouts inside each customer's own account | – |
 | 8 | Connected accounts, seller payouts, reserves, refunds | – |
-| 9 | Browser shopping, live card payments with the Airwallex sandbox test card | Nothing. Airi CLI credentials are built in and switch on with `AIRI_PAYMENT_METHOD_ID` |
+| 9 | Browser shopping, live card payments · Airi CLI: mandate, passkey approval, single-use credential from Airi's test card, result reported (run live; see the kit's README) | Nothing. The hosted console uses the sandbox test card, because each Airi payment needs the wallet owner's passkey |
 | 10 | Airwallex Agentic Commerce: onboarding, catalogue ingest, the merchant MCP endpoint, checkout sessions priced by the merchant, delegate payment tokens, payments, the declined card and retry | Nothing, once the merchant is onboarded (its endpoints run on AWS). Before onboarding, the kit uses its local merchant MCP server |
 | 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee · Metal testnet: accounts, spending limits bound and replaced, 400+ mandate payments, the over-cap refusal recorded on chain, the sweep paid once | Nothing when `METAL_RPC_URL` is set. The payments take about three minutes; `METAL=emulated` runs it in seconds |
 | 12 | Card pre-authorization holds, increments, single captures, cancels · Metal clearing on testnet: deposits, signed running totals, withdrawals | Nothing when Metal's clearing service is reachable. A live run takes 15–20 minutes because withdrawals wait for Metal's challenge windows; `METAL=emulated` runs it in 30 seconds |
@@ -355,7 +355,7 @@ Behind a proxy on Node 22+, run with `NODE_USE_ENV_PROXY=1`.
 ## Tests
 
 ```sh
-npm test                     # 105 tests: policy for all fifteen kits, approvals, the beneficiary schema check, x402 settlement and the AWS console API
+npm test                     # 106 tests: policy for all fifteen kits, approvals, the beneficiary schema check, x402 settlement and the AWS console API
 npm run typecheck
 npm run verify               # both, as CI runs them
 ```
