@@ -58,13 +58,29 @@ export interface CredentialsProvider {
 
 const run = promisify(execFile);
 
+/** Airi refused a request (for example, the wallet's per-transaction limit). Nothing was charged. */
+export class AiriRefused extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+  }
+}
+
 /** Airi CLI: the shopper's own Airi wallet, through the commands its README and bundled skill document. */
 class AiriCliProvider implements CredentialsProvider {
   name = "Airi CLI";
   private readonly bin = process.env.AIRI_CLI || "airi-cli";
   private async cli(args: string[], timeoutMs = 60_000) {
-    const { stdout } = await run(this.bin, [...args, "-o", "json", "--no-telemetry"], { timeout: timeoutMs, maxBuffer: 1 << 20 });
-    return stdout.trim() ? JSON.parse(stdout) : {};
+    try {
+      const { stdout } = await run(this.bin, [...args, "-o", "json", "--no-telemetry"], { timeout: timeoutMs, maxBuffer: 1 << 20 });
+      return stdout.trim() ? JSON.parse(stdout) : {};
+    } catch (e: any) {
+      // airi-cli prints {"ok":false,"error":{"code","message"}}; surface Airi's own words.
+      const text = String(e.stderr || e.stdout || "");
+      let err: { code?: string; message?: string } | undefined;
+      try { err = JSON.parse(text.trim().split("\n").pop() || "{}").error; } catch { /* not JSON */ }
+      if (err?.message) throw new AiriRefused(err.code ?? "error", err.message);
+      throw e;
+    }
   }
   async createMandate(m: MandateRequest): Promise<Mandate> {
     const who = await this.cli(["auth", "whoami"]);

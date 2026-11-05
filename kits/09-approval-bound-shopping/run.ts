@@ -19,7 +19,7 @@ import { launchBrowser } from "../../src/core/browser.ts";
 import { RailsClient } from "../../src/core/rails.ts";
 import { startStore } from "../../src/commerce/server.ts";
 import { MERCHANT, DELIVERY } from "../../src/commerce/store.ts";
-import { credentialsProvider } from "../../src/commerce/credentials.ts";
+import { credentialsProvider, AiriRefused } from "../../src/commerce/credentials.ts";
 import { say, usd } from "../../src/core/narrate.ts";
 import { extract, explain } from "../../src/core/llm.ts";
 import { requestApproval, assertApproved, type Terms } from "../../src/core/approval.ts";
@@ -35,6 +35,8 @@ const { store, url, close } = await startStore(awx);
 const browser = await launchBrowser();
 const page = await browser.newPage();
 const provider = credentialsProvider();
+/** A clean, already-narrated end of the run (for example, the shopper's wallet refused the payment). */
+class StopRun extends Error {}
 const num = async (sel: string) => Number(await page.getAttribute(sel, "data-value"));
 
 try {
@@ -111,10 +113,20 @@ try {
   assertApproved(terms, approval);
 
   say.beat("pay", `Shopper authorized payment; get a mandate and one-time credentials from ${provider.name}.`);
-  const mandate = await provider.createMandate({
-    amount: terms.amount, currency: terms.currency, merchant: MERCHANT.name, merchantUrl: MERCHANT.url, merchantCountry: "US",
-    item: { name: String(terms.product), unitPrice: terms.amount, quantity: 1 }, description: `${terms.product}, ${String(terms.delivery).toLowerCase()} delivery (checkout ${ref})`, termsHash: approval.termsHash,
-  });
+  let mandate;
+  try {
+    mandate = await provider.createMandate({
+      amount: terms.amount, currency: terms.currency, merchant: MERCHANT.name, merchantUrl: MERCHANT.url, merchantCountry: "US",
+      item: { name: String(terms.product), unitPrice: terms.amount, quantity: 1 }, description: `${terms.product}, ${String(terms.delivery).toLowerCase()} delivery (checkout ${ref})`, termsHash: approval.termsHash,
+    });
+  } catch (e) {
+    if (!(e instanceof AiriRefused)) throw e;
+    // The shopper's own wallet said no. Its limits are the shopper's control: never split the order or switch cards to get around them.
+    say.warn(`Airi refused the payment mandate: ${e.message}`);
+    say.decision("pay", "STOP AND ASK THE SHOPPER", `The shopper's Airi wallet refused ${usd(terms.amount)} (${e.message}). The agent will not split the order or use another card to get under the limit. Nothing was charged; checkout ${ref} and the cart are kept so the shopper can raise the limit in Airi or choose a cheaper option.`);
+    say.ok(`nothing charged · checkout ${ref} kept · the shopper decides`);
+    throw new StopRun();
+  }
   say.step(`mandate ${mandate.id} for ${usd(mandate.amount)} at ${mandate.merchant}, bound to terms ${mandate.termsHash}`);
   if (mandate.approvalUrl) say.warn(`confirm this payment in Airi with your passkey: ${mandate.approvalUrl} (the agent waits up to 5 minutes)`);
   await page.click("#pay");
@@ -160,6 +172,8 @@ try {
   say.table([{ checkout: ref, product: co.items[0]!.name, delivery: co.delivery.id, approved_total: terms.amount, charged: co.status === "PAID" ? co.total : 0, attempts: co.attempts.length, order: co.orderNumber ?? "" }]);
   say[co.status === "PAID" && co.attempts.length === 1 && co.total === terms.amount ? "ok" : "fail"](`charged once, exactly the approved ${usd(terms.amount)} · order ${co.orderNumber}`);
   say.step(`audit log: ${auditPath}`);
+} catch (e) {
+  if (!(e instanceof StopRun)) throw e;
 } finally {
   await browser.close();
   await close();
