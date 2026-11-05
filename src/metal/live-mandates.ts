@@ -22,7 +22,7 @@ import { credentialCreate, mandateBind, mandateReplace, mandatePull, accountCrea
 // @ts-expect-error untyped deep import
 import { fund } from "@metalntwx/metal-agent/dist/commands/fund.js";
 // @ts-expect-error untyped deep import
-import { issuerKeyPath, publicKeyPath } from "@metalntwx/metal-agent/dist/keystore.js";
+import { issuerKeyPath, publicKeyPath, mandateKeyPath } from "@metalntwx/metal-agent/dist/keystore.js";
 import { MetalRefused, type Address, type ChainEvent, type Mandate, type MandateTerms, type Refusal } from "./emulator.ts";
 import type { MandateChain, MandateStatus } from "./mandates.ts";
 import { toBase } from "./units.ts";
@@ -34,7 +34,7 @@ const dollars = (cents: number) => (cents / 100).toFixed(2);
 const PAYMENT = parseAbiItem("event MandatePayment(bytes32 indexed ref, address indexed to, bytes20 l3aDigest, bytes agentKey, uint256 amount, uint256 spent, uint256 occurrences)");
 const REFUSED = parseAbiItem("event MandateRefused(bytes32 indexed ref, address indexed to, bytes20 l3aDigest, bytes agentKey, uint256 amount, uint8 reason)");
 
-interface Local extends Mandate { credential: string; ownerKey: string; predecessor?: string }
+interface Local extends Mandate { credential: string; ownerKey: string; predecessor?: string; /** The agent's mandate key, kept across replacements. */ keyFile: string }
 
 /** Collects what a metal-agent command prints and reads its `field value` lines. */
 function lines() {
@@ -149,7 +149,7 @@ export class LiveMandates implements MandateChain {
     return account;
   }
 
-  private async credential(principal: Address, agent: string, t: MandateTerms) {
+  private async credential(principal: Address, agent: string, t: MandateTerms, mandateKeyFile?: string) {
     const ownerKey = this.owners.get(principal);
     if (!ownerKey) throw new Error(`no owner key for ${principal}`);
     const out = join(this.dir, `${agent.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${randomUUID().slice(0, 8)}.json`);
@@ -164,7 +164,7 @@ export class LiveMandates implements MandateChain {
       maxOccurrences: undefined,
       description: t.description,
       out,
-      mandateKeyFile: undefined,
+      mandateKeyFile,
       issuerKeyPath: issuerKeyPath(ownerKey),
     }, l.print);
     return { out, ownerKey, ref: l.field("mandate") };
@@ -174,20 +174,21 @@ export class LiveMandates implements MandateChain {
     const c = await this.credential(principal, agent, t);
     const l = lines();
     await mandateBind(this.target, { accountFactory: this.factory, signerPaths: [], credentialPath: c.out, issuerPaths: [publicKeyPath(issuerKeyPath(c.ownerKey))], keyPath: c.ownerKey }, l.print);
-    const m: Local = { ...t, id: c.ref, principal, agent, spentCents: 0, payments: 0, revoked: false, credential: c.out, ownerKey: c.ownerKey };
+    const m: Local = { ...t, id: c.ref, principal, agent, spentCents: 0, payments: 0, revoked: false, credential: c.out, ownerKey: c.ownerKey, keyFile: mandateKeyPath(c.out) };
     this.mandates.set(m.id, m);
     return m;
   }
 
   async replace(oldId: string, t: MandateTerms): Promise<Mandate> {
     const old = this.mandate(oldId) as Local;
-    const c = await this.credential(old.principal, old.agent, t);
+    // The guide: create the replacement with --mandate-key-file naming the agent's key, so the agent keeps its key.
+    const c = await this.credential(old.principal, old.agent, t, old.keyFile);
     const l = lines();
     await mandateReplace(this.target, { credentialPath: c.out, replacesPath: old.credential, issuerPaths: [publicKeyPath(issuerKeyPath(c.ownerKey))], accountFactory: this.factory, signerPaths: [], keyPath: c.ownerKey }, l.print);
     const s = await this.status(oldId);
     old.revoked = true;
     old.replacedBy = c.ref;
-    const m: Local = { ...t, id: c.ref, principal: old.principal, agent: old.agent, spentCents: s.spentCents, payments: s.payments, revoked: false, credential: c.out, ownerKey: c.ownerKey, predecessor: oldId };
+    const m: Local = { ...t, id: c.ref, principal: old.principal, agent: old.agent, spentCents: s.spentCents, payments: s.payments, revoked: false, credential: c.out, ownerKey: c.ownerKey, predecessor: oldId, keyFile: old.keyFile };
     this.mandates.set(m.id, m);
     return m;
   }
@@ -212,7 +213,7 @@ export class LiveMandates implements MandateChain {
       const l = lines();
       let outcome: string;
       try {
-        outcome = await mandatePull(this.target, { credentialPath: m.credential, mandateKeyFile: undefined, to, amount: toBase(cents), paymentId, keyPath: opts.recordRefusal ? m.ownerKey : undefined, recordRefusal: Boolean(opts.recordRefusal) }, l.print);
+        outcome = await mandatePull(this.target, { credentialPath: m.credential, mandateKeyFile: m.keyFile, to, amount: toBase(cents), paymentId, keyPath: opts.recordRefusal ? m.ownerKey : undefined, recordRefusal: Boolean(opts.recordRefusal) }, l.print);
       } catch (err) {
         // A pull that was not sent, or whose answer was lost, is sent again under the same payment id: Metal pays it at most once.
         if (attempt < 8 && /could not be reached|fetch failed|timed? ?out|ECONNRESET|429|503|sending it failed|the same pull sends it|send it again/i.test(String((err as Error).message))) {

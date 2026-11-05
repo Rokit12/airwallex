@@ -44,11 +44,16 @@ for (const s of SELLERS) {
   ledger[s.key] = { owed: s.owed, paidOut: 0, refunds: 0, recovered: 0, reserveHeld: 0 };
   say.step(`${s.spec.name}: ${a.id} ${a.status} · owed ${usd(s.owed)} · refund rate ${(s.refundRate * 100).toFixed(1)}% · ${s.monthsActive} months on the marketplace`);
 }
+// Fund the platform wallet with this cycle's buyer payments: exactly what the sellers are owed (deposit simulation).
+// The shared sandbox wallet already holds other money, so the run measures this cycle from the balance before it.
+const platformBefore = awx.mode === "emulated" ? 0 : await balanceOf(awx, undefined);
 if (awx.mode === "emulated") await awx.fundPlatform(totalOwed, "Buyer payments, week 42");
-// Live, the platform pays from its existing wallet, so reconcile on the change in its balance.
-const platformBefore = await balanceOf(awx, undefined);
-const platformStart = awx.mode === "emulated" ? platformBefore : totalOwed;
-say.step(awx.mode === "emulated" ? `platform holds ${usd(platformStart)} = ${usd(totalOwed)} owed, no spare cash` : `sellers are owed ${usd(totalOwed)}; the platform wallet (${usd(platformBefore)} now) pays them, and the run reconciles on how much it moves`);
+else {
+  await sb.deposit(await sb.usdGlobalAccount(), totalOwed, "Buyer payments, week 42");
+  for (let i = 0; i < 10 && (await balanceOf(awx, undefined)) < platformBefore + totalOwed - 0.005; i++) await new Promise((r) => setTimeout(r, 1000));
+}
+const platformStart = r2((await balanceOf(awx, undefined)) - platformBefore);
+say.step(`platform received ${usd(platformStart)} of buyer payments = ${usd(totalOwed)} owed to sellers, no spare cash`);
 
 say.beat("plan", "Set a reserve per seller.");
 const reserves: Record<string, number> = {};
@@ -112,15 +117,9 @@ if (shortfall > 0) {
 say.beat("result", awx.mode === "emulated" ? "Reconcile (platform rail EMULATED on this account)." : "Reconcile against Airwallex.");
 say.table(SELLERS.map((s) => { const l = ledger[s.key]!; const r = reconcile(l); return { seller: s.spec.name, owed: l.owed, paid_out: l.paidOut, refunds: l.refunds, recovered: l.recovered, reserve_held: l.reserveHeld, reconciles: r.ok ? "✔" : `✖ ${r.difference}` }; }));
 const unreleased = r2(Object.values(ledger).reduce((s, l) => s + l.reserveHeld, 0));
-const platformNow = await balanceOf(awx, undefined);
-if (awx.mode === "emulated") {
-  say[Math.abs(platformNow - unreleased) < 0.005 ? "ok" : "fail"](`platform wallet ${usd(platformNow)} = unreleased reserves ${usd(unreleased)}`);
-} else {
-  // Of the money owed to sellers, what left the platform wallet must be exactly payouts + refunds − recoveries; the rest is unreleased reserve.
-  const left = r2(platformBefore - platformNow);
-  const expected = r2(totalOwed - unreleased);
-  say[Math.abs(left - expected) < 0.005 ? "ok" : "warn"](`platform wallet moved ${usd(left)} = owed ${usd(totalOwed)} − unreleased reserves ${usd(unreleased)}${Math.abs(left - expected) < 0.005 ? "" : ` (expected ${usd(expected)}; other activity on the shared sandbox account?)`}`);
-}
+// The guide's rule: the platform's remaining balance (of this cycle's money) must equal unreleased reserves.
+const remaining = r2((await balanceOf(awx, undefined)) - platformBefore);
+say[Math.abs(remaining - unreleased) < 0.005 ? "ok" : "fail"](`platform keeps ${usd(remaining)} of this cycle's money = unreleased reserves ${usd(unreleased)}`);
 // Each seller's wallet against the ledger: live balances (GET /balances/current on behalf), plus Airwallex's
 // BALANCE_REPORT, created with no date filters and downloaded within the link's one minute. The report is a
 // periodic snapshot, so accounts opened during this run appear in it only after its next refresh.

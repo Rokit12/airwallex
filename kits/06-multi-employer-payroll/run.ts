@@ -12,6 +12,7 @@
 import { newRequestId } from "../../src/core/client.ts";
 import { PlatformClient } from "../../src/core/platform-client.ts";
 import { Sandbox } from "../../src/core/sandbox.ts";
+import { checkBeneficiary } from "../../src/core/beneficiary-schema.ts";
 import { onboardAndFund, transferToCustomer, chargeCustomer, waitSettled, balanceOf, depositAndWait } from "../../src/core/platform.ts";
 import { say, usd } from "../../src/core/narrate.ts";
 import { explain } from "../../src/core/llm.ts";
@@ -38,6 +39,9 @@ async function payLine(e: Employer, l: PricedLine) {
     const conv = await awx.post("/fx/conversions/create", { request_id: newRequestId(), buy_currency: l.currency, sell_currency: "USD", buy_amount: l.needed }, ob);
     say.step(`${e.spec.name}: bought ${l.currency} ${conv.buy_amount} for USD ${conv.sell_amount} (on behalf; ${l.currency} landed in ${e.key}'s wallet: ${await balanceOf(awx, accts[e.key], l.currency)})`);
   }
+  // Schema, then POST /beneficiaries/validate on the employer's behalf, before creating the contractor.
+  const check = await checkBeneficiary(awx, beneficiaryFor(l) as unknown as Record<string, unknown>, ob.onBehalfOf);
+  if (check.missing.length || check.invalid.length) throw new Error(`${l.name} beneficiary fails Airwallex's checks: missing ${check.missing.join(", ") || "none"}; invalid ${check.invalid.join(", ") || "none"}`);
   const ben = await awx.post("/beneficiaries/create", { request_id: newRequestId(), ...beneficiaryFor(l) }, ob);
   const tr = await awx.post("/transfers/create", { request_id: newRequestId(), beneficiary_id: ben.id ?? ben.beneficiary_id, transfer_amount: String(l.amount), transfer_currency: l.currency, source_currency: l.currency, transfer_method: l.method, reference: `PAYROLL-W42-${e.key}`, reason: "wages_salary" }, ob);
   // Transfers made on a customer's behalf stay PROCESSING until simulated to a terminal status.

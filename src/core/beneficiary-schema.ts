@@ -41,14 +41,15 @@ export function invalidFields(details: unknown): string[] {
   return Array.isArray(errs) ? errs.map((e: any) => `${e.source ?? "?"} (${e.code ?? "?"})`) : [];
 }
 
-export async function checkBeneficiary(awx: AirwallexClient, draft: Record<string, unknown>): Promise<{ missing: string[]; invalid: string[]; checked: number }> {
+export async function checkBeneficiary(awx: AirwallexClient, draft: Record<string, unknown>, onBehalfOf?: string): Promise<{ missing: string[]; invalid: string[]; checked: number }> {
   const res = await awx.post<any>("/beneficiaries/schema", { create_beneficiary_request: draft });
   const schema: Record<string, FieldRule> = res.schema ?? {};
   const required = Object.values(schema).filter((r) => r.required && r.relevant !== false).length;
   const missing = missingRequired(schema, draft);
   if (missing.length) return { missing, invalid: [], checked: required };
   try {
-    await awx.post("/beneficiaries/validate", draft); // {beneficiary, transfer_methods}, as beneficiaries/create takes it
+    // {beneficiary, transfer_methods}, as beneficiaries/create takes it; validate accepts x-on-behalf-of (kit 6).
+    await awx.post("/beneficiaries/validate", draft, onBehalfOf ? { onBehalfOf } : {});
     return { missing: [], invalid: [], checked: required };
   } catch (err) {
     if (err instanceof AwxError && err.code === "validation_failed") return { missing: [], invalid: invalidFields(err.details), checked: required };

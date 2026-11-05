@@ -92,9 +92,27 @@ export async function openConnectedAccount(awx: AirwallexClient, c: CustomerSpec
   return { id, name: c.name, status };
 }
 
+/**
+ * Create a platform transfer or charge exactly once. A non-success answer is ambiguous (the guide, kit 5):
+ * before treating it as failed, look the request id up in the list, so a retry can never create a second one.
+ */
+async function createOnce(awx: AirwallexClient, kind: "connected_account_transfers" | "charges", body: Record<string, unknown> & { request_id: string }) {
+  try {
+    return await awx.post<any>(`/${kind}/create`, body);
+  } catch (err) {
+    const e = err as { status?: number; code?: string; message?: string };
+    const ambiguous = !e.status || e.status >= 500 || e.status === 429 || e.code === "duplicate_request_id" || /duplicate_request_id/.test(e.message ?? "");
+    if (!ambiguous) throw err;
+    const found = await awx.get<any>(`/${kind}`, { query: { request_id: body.request_id, page_size: 10 } }).catch(() => null);
+    const item = (found?.items ?? []).find((x: any) => x.request_id === body.request_id);
+    if (item) return item;
+    throw err;
+  }
+}
+
 /** Platform → customer. Returns NEW; poll until SETTLED. */
 export async function transferToCustomer(awx: AirwallexClient, p: { to: string; amount: number; currency: string; reason: string; reference: string; requestId?: string }) {
-  return awx.post("/connected_account_transfers/create", {
+  return createOnce(awx, "connected_account_transfers", {
     request_id: p.requestId ?? newRequestId(),
     amount: p.amount,
     currency: p.currency,
@@ -106,7 +124,7 @@ export async function transferToCustomer(awx: AirwallexClient, p: { to: string; 
 
 /** Customer → platform (fee, repayment, shortfall recovery). Returns NEW; poll until SETTLED. */
 export async function chargeCustomer(awx: AirwallexClient, p: { from: string; amount: number; currency: string; reason: string; reference: string; requestId?: string }) {
-  return awx.post("/charges/create", {
+  return createOnce(awx, "charges", {
     request_id: p.requestId ?? newRequestId(),
     amount: p.amount,
     currency: p.currency,

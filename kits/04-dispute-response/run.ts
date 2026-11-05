@@ -210,7 +210,7 @@ say.step(`policy: chargeback fee ${usd(DEFAULT_POLICY.chargebackFee)}, response 
 say.step(`model: ${llmEnabled() ? "Claude reads notes and explains decisions" : "rules only (set ANTHROPIC_API_KEY to let Claude read the notes)"}`);
 
 say.beat("setup", "Taking three card payments and staging a dispute on each (sandbox simulation).");
-const staged: { c: DemoCase; disputeId: string }[] = [];
+const staged: { c: DemoCase; disputeId: string; piId: string }[] = [];
 for (const c of CASES) {
   const piId = await takePayment(c);
   const d = await sb.createDispute({
@@ -221,7 +221,7 @@ for (const c of CASES) {
     comment: c.label,
   });
   say.step(`${c.key}: ${usd(c.amount)} payment ${piId} → dispute ${d.id} (${c.visaReason}, ${c.stage})`);
-  staged.push({ c, disputeId: d.id });
+  staged.push({ c, disputeId: d.id, piId });
 }
 
 say.beat("plan", "Reading each dispute from Airwallex, pricing it, and deciding.");
@@ -277,9 +277,12 @@ if (challenged) {
 
 say.beat("result", awx.mode.payments === "emulated" ? "Final state read back (card payments EMULATED on this account)." : "Final state read back from Airwallex.");
 const rows = [];
-for (const { c, disputeId } of staged) {
+for (const { c, disputeId, piId } of staged) {
   const d = await readDispute(disputeId);
-  rows.push({ case: c.key, dispute: disputeId, amount: Number(d.amount), stage: d.stage, status: d.status });
+  // GET /pa/refunds: the refund an accepted dispute issued, read back rather than assumed.
+  const refunds: any = await awx.get("/pa/refunds", { query: { payment_intent_id: piId, page_size: 10 } }).catch(() => ({ items: [] }));
+  const refunded = (refunds.items ?? []).filter((r: any) => r.payment_intent_id === piId && r.status !== "FAILED").reduce((sum: number, r: any) => sum + Number(r.amount ?? 0), 0);
+  rows.push({ case: c.key, dispute: disputeId, amount: Number(d.amount), stage: d.stage, status: d.status, refunded });
 }
 say.table(rows);
 const disputed = CASES.reduce((s, c) => s + c.amount, 0);
