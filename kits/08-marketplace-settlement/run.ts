@@ -13,7 +13,7 @@
 import { newRequestId } from "../../src/core/client.ts";
 import { PlatformClient } from "../../src/core/platform-client.ts";
 import { Sandbox } from "../../src/core/sandbox.ts";
-import { onboardAndFund, transferToCustomer, chargeCustomer, waitSettled, balanceOf } from "../../src/core/platform.ts";
+import { onboardAndFund, transferToCustomer, chargeCustomer, waitSettled, balanceOf, balanceReport } from "../../src/core/platform.ts";
 import { say, usd } from "../../src/core/narrate.ts";
 import { extract, explain } from "../../src/core/llm.ts";
 import { requestApproval, assertApproved, type Terms } from "../../src/core/approval.ts";
@@ -45,8 +45,10 @@ for (const s of SELLERS) {
   say.step(`${s.spec.name}: ${a.id} ${a.status} · owed ${usd(s.owed)} · refund rate ${(s.refundRate * 100).toFixed(1)}% · ${s.monthsActive} months on the marketplace`);
 }
 if (awx.mode === "emulated") await awx.fundPlatform(totalOwed, "Buyer payments, week 42");
-const platformStart = awx.mode === "emulated" ? await balanceOf(awx, undefined) : totalOwed;
-say.step(`platform holds ${usd(platformStart)} = ${usd(totalOwed)} owed, no spare cash`);
+// Live, the platform pays from its existing wallet, so reconcile on the change in its balance.
+const platformBefore = await balanceOf(awx, undefined);
+const platformStart = awx.mode === "emulated" ? platformBefore : totalOwed;
+say.step(awx.mode === "emulated" ? `platform holds ${usd(platformStart)} = ${usd(totalOwed)} owed, no spare cash` : `sellers are owed ${usd(totalOwed)}; the platform wallet (${usd(platformBefore)} now) pays them, and the run reconciles on how much it moves`);
 
 say.beat("plan", "Set a reserve per seller.");
 const reserves: Record<string, number> = {};
@@ -110,10 +112,31 @@ if (shortfall > 0) {
 say.beat("result", awx.mode === "emulated" ? "Reconcile (platform rail EMULATED on this account)." : "Reconcile against Airwallex.");
 say.table(SELLERS.map((s) => { const l = ledger[s.key]!; const r = reconcile(l); return { seller: s.spec.name, owed: l.owed, paid_out: l.paidOut, refunds: l.refunds, recovered: l.recovered, reserve_held: l.reserveHeld, reconciles: r.ok ? "✔" : `✖ ${r.difference}` }; }));
 const unreleased = r2(Object.values(ledger).reduce((s, l) => s + l.reserveHeld, 0));
+const platformNow = await balanceOf(awx, undefined);
 if (awx.mode === "emulated") {
-  const platformNow = await balanceOf(awx, undefined);
   say[Math.abs(platformNow - unreleased) < 0.005 ? "ok" : "fail"](`platform wallet ${usd(platformNow)} = unreleased reserves ${usd(unreleased)}`);
-} else say.ok(`unreleased reserves ${usd(unreleased)} (platform ledger)`);
-const report = await awx.post("/platform_reports/create", { type: "BALANCE_REPORT", file_format: "CSV" });
-say.step(`balance report ${report.id ?? ""} ${report.status ?? ""}`);
+} else {
+  // Of the money owed to sellers, what left the platform wallet must be exactly payouts + refunds − recoveries; the rest is unreleased reserve.
+  const left = r2(platformBefore - platformNow);
+  const expected = r2(totalOwed - unreleased);
+  say[Math.abs(left - expected) < 0.005 ? "ok" : "warn"](`platform wallet moved ${usd(left)} = owed ${usd(totalOwed)} − unreleased reserves ${usd(unreleased)}${Math.abs(left - expected) < 0.005 ? "" : ` (expected ${usd(expected)}; other activity on the shared sandbox account?)`}`);
+}
+// Each seller's wallet against the ledger: live balances (GET /balances/current on behalf), plus Airwallex's
+// BALANCE_REPORT, created with no date filters and downloaded within the link's one minute. The report is a
+// periodic snapshot, so accounts opened during this run appear in it only after its next refresh.
+const report = await balanceReport(awx).catch((e) => { say.warn(`balance report: ${(e as Error).message}`); return null; });
+const rows = [];
+for (const s of SELLERS) {
+  const l = ledger[s.key]!;
+  const expected = r2(l.paidOut - l.recovered);
+  const live = await balanceOf(awx, accts[s.key]);
+  const inReport = report?.rows.find((r) => r.account_id === accts[s.key] && r.currency === "USD")?.available_balance;
+  rows.push({ seller: s.spec.name, ledger_wallet: expected, live_wallet: live, in_report: inReport ?? "not yet", match: Math.abs(live - expected) < 0.005 ? "✔" : "✖" });
+}
+say.table(rows);
+say[rows.every((r) => r.match === "✔") ? "ok" : "fail"](`${rows.filter((r) => r.match === "✔").length}/${rows.length} seller wallets match the ledger`);
+if (report) {
+  const latest = report.rows.map((r: any) => String(r.last_update ?? "")).sort().pop();
+  say.step(`balance report ${report.id}: ${report.rows.length} rows, snapshot as of ${latest || "?"}${rows.some((r) => r.in_report === "not yet") ? " (taken before these sellers' accounts were opened)" : ""}`);
+}
 say.step(`audit log: ${auditPath}`);

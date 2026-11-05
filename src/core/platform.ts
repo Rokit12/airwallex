@@ -176,3 +176,40 @@ export async function balanceOf(awx: AirwallexClient, acct: string | undefined, 
   const items: any[] = Array.isArray(res) ? res : res.items ?? [];
   return Number(items.find((b) => b.currency === currency)?.available_amount ?? 0);
 }
+
+export interface BalanceRow { account_id: string; currency: string; available_balance: number; reserved_balance: number; total_balance: number }
+
+/**
+ * A platform BALANCE_REPORT, as the guide describes: create it with no date
+ * filters, poll GET /platform_reports/{id} until COMPLETED, then download the
+ * CSV at once (the download_url expires one minute after it is issued).
+ */
+export async function balanceReport(awx: AirwallexClient, waitMs = 120_000): Promise<{ id: string; rows: BalanceRow[]; columns: string[] }> {
+  const created = await awx.post<any>("/platform_reports/create", { type: "BALANCE_REPORT", file_format: "CSV" });
+  const until = Date.now() + waitMs;
+  let r = created;
+  while (r.status !== "COMPLETED") {
+    if (r.status === "FAILED") throw new Error(`balance report ${created.id} failed: ${r.failed_reason ?? "unknown"}`);
+    if (Date.now() > until) throw new Error(`balance report ${created.id} still ${r.status} after ${waitMs / 1000} s`);
+    await new Promise((res) => setTimeout(res, 2000));
+    r = await awx.get<any>(`/platform_reports/${created.id}`);
+  }
+  if (Array.isArray(r.rows)) {
+    // The platform emulator returns rows inline.
+    return { id: r.id, columns: ["account_id", "currency", "available_balance"], rows: r.rows.map((x: any) => ({ account_id: x.account, currency: x.currency, available_balance: x.available, reserved_balance: 0, total_balance: x.available })) };
+  }
+  const res = await fetch(r.download_url);
+  if (!res.ok) throw new Error(`balance report download answered ${res.status}`);
+  const rows = parseCsv(await res.text());
+  return { id: r.id, columns: Object.keys(rows[0] ?? {}), rows: rows as any };
+}
+
+export function parseCsv(text: string): Record<string, string | number>[] {
+  const lines = text.replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim());
+  const split = (l: string) => (l.match(/("([^"]|"")*"|[^,]*)(,|$)/g) ?? []).map((c) => c.replace(/,$/, "").replace(/^"|"$/g, "").replace(/""/g, '"')).slice(0, -1);
+  const head = split(lines[0] ?? "").map((h) => h.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""));
+  return lines.slice(1).map((l) => {
+    const cells = split(l);
+    return Object.fromEntries(head.map((h, i) => [h, /balance$/.test(h) ? Number(cells[i]) : (cells[i] ?? "")]));
+  });
+}

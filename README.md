@@ -6,9 +6,9 @@ Fifteen finance agents for **Trailhead Outfitters LLC**, a US business, built on
 
 ## Demo video
 
-[![Demo video: all fifteen agents running live on AWS (under 5 minutes)](docs/images/demo-video.png)](https://drive.google.com/file/d/1Xsp2FX34FGK7idpkTitpNM-SMBuZZ8zl/view?usp=sharing)
+[![Demo video: all fifteen agents running live on AWS (under 5 minutes)](docs/images/demo-video.png)](https://drive.google.com/file/d/1OK2wOdf78QsWj2NCuAyBDvVXGGQXuTzv/view?usp=sharing)
 
-**[Watch the demo video (under 5 minutes)](https://drive.google.com/file/d/1Xsp2FX34FGK7idpkTitpNM-SMBuZZ8zl/view?usp=sharing)**. It shows all fifteen kits running against the Airwallex sandbox in the Agent Console hosted on AWS, each followed by the same activity in the Airwallex dashboard and inbox.
+**[Watch the demo video (under 5 minutes)](https://drive.google.com/file/d/1OK2wOdf78QsWj2NCuAyBDvVXGGQXuTzv/view?usp=sharing)**. It shows all fifteen kits running against the Airwallex sandbox in the Agent Console hosted on AWS, each followed by the same activity in the Airwallex dashboard and inbox.
 
 ## Try it live
 
@@ -50,7 +50,7 @@ Every run moves money in the Airwallex sandbox only. One kit runs at a time, so 
 | Requirement | Where |
 |---|---|
 | **Working demo** | Hosted: [https://d1zoxhgak5pvwd.cloudfront.net/](https://d1zoxhgak5pvwd.cloudfront.net/), signing in as `judge@airwallex.com` / `Airwallex26!` ([Try it live](#try-it-live)). Locally: `npm run console`, then open http://localhost:4310 and run any kit against your own sandbox ([Quick start](#quick-start)). Without credentials, open `preview/agent-console.html`, which replays recorded runs of all twelve kits. |
-| **Video under 5 minutes** | [Demo video (under 5 minutes)](https://drive.google.com/file/d/1Xsp2FX34FGK7idpkTitpNM-SMBuZZ8zl/view?usp=sharing): a walkthrough of all fifteen kits running in the console on AWS. |
+| **Video under 5 minutes** | [Demo video (under 5 minutes)](https://drive.google.com/file/d/1OK2wOdf78QsWj2NCuAyBDvVXGGQXuTzv/view?usp=sharing): a walkthrough of all fifteen kits running in the console on AWS. |
 | **Repository with setup instructions** | This README: [Quick start](#quick-start), [Kit setup and enablement](#kit-setup-and-enablement), [Troubleshooting](docs/TROUBLESHOOTING.md). |
 | **Uses Airwallex APIs** | Every kit calls the Airwallex sandbox REST API: authentication, balances, Global Accounts, simulated deposits, FX rates, quotes and conversions, beneficiaries, transfers and transfer simulations, card issuing (cardholders, cards, controls, transactions), payment intents (confirm, pre-authorization, increment, capture, cancel), disputes and dispute simulations, file uploads, connected accounts. Each run writes every call to an audit log in `runs/`. |
 

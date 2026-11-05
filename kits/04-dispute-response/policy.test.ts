@@ -67,3 +67,12 @@ test("the decision for the injected case comes from evidence and policy alone", 
   // The statement never reaches the decision: it uses the extracted evidence fields and the policy only.
   assert.equal(decide(factsFor("A")).action, "CHALLENGE");
 });
+
+import { freshEvidence } from "./policy.ts";
+test("after a rejection, evidence already submitted is never sent again", () => {
+  const docs = [{ id: "invoice" }, { id: "tracking" }, { id: "session-log" }];
+  const sent = new Set(["invoice", "tracking"]);
+  assert.deepEqual(freshEvidence(docs, sent, (d) => d.id).map((d) => d.id), ["session-log"]);
+  assert.deepEqual(freshEvidence(docs.slice(0, 2), sent, (d) => d.id), [], "nothing new: escalate instead");
+  assert.equal(freshEvidence([{ id: "x" }, { id: "x" }], new Set(), (d) => d.id).length, 1, "no duplicates within one submission");
+});

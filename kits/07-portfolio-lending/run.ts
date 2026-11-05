@@ -14,7 +14,7 @@
 import { newRequestId } from "../../src/core/client.ts";
 import { PlatformClient } from "../../src/core/platform-client.ts";
 import { Sandbox } from "../../src/core/sandbox.ts";
-import { onboardAndFund, transferToCustomer, chargeCustomer, waitSettled, balanceOf, depositAndWait } from "../../src/core/platform.ts";
+import { onboardAndFund, transferToCustomer, chargeCustomer, waitSettled, balanceOf, depositAndWait, balanceReport } from "../../src/core/platform.ts";
 import { say, usd } from "../../src/core/narrate.ts";
 import { explain } from "../../src/core/llm.ts";
 import { requestApproval, assertApproved, type Terms } from "../../src/core/approval.ts";
@@ -93,8 +93,13 @@ if (plan2.now > 0) {
 }
 
 say.beat("result", awx.mode === "emulated" ? "Portfolio reconciliation (platform rail EMULATED on this account)." : "Portfolio reconciliation from Airwallex.");
-const report = await awx.post("/platform_reports/create", { type: "BALANCE_REPORT", file_format: "CSV" });
-say.step(`platform report ${report.id ?? ""} ${report.status ?? ""}`);
+// Portfolio snapshot from Airwallex: BALANCE_REPORT (no date filters), downloaded within the link's one minute.
+const report = await balanceReport(awx).catch((e) => { say.warn(`balance report: ${(e as Error).message}`); return null; });
+// The report is a periodic snapshot: borrower accounts opened during this run appear after its next refresh.
+const walletOf = (key: string) => report?.rows.find((r) => r.account_id === accts[key]?.id && r.currency === "USD")?.available_balance;
+if (report) say.step(`platform balance report ${report.id}: ${report.rows.length} rows, snapshot as of ${report.rows.map((r: any) => String(r.last_update ?? "")).sort().pop() || "?"}`);
+const liveWallet: Record<string, number> = {};
+for (const b of BORROWERS) liveWallet[b.key] = await balanceOf(awx, accts[b.key]!.id);
 say.table(BORROWERS.map((b) => ({
   borrower: b.spec.name,
   outstanding_before: b.outstanding,
@@ -102,6 +107,8 @@ say.table(BORROWERS.map((b) => ({
   receivable: receivables[b.key] ?? 0,
   disbursed: b.approved ? plan2.now : 0,
   outstanding_after: b.approved ? plan2.now : b.outstanding - (repaid[b.key] ?? 0),
+  wallet_now: liveWallet[b.key],
+  in_report: walletOf(b.key) ?? "not yet",
 })));
 say[capital >= P.reserveFloor ? "ok" : "fail"](`lending capital ${usd(capital)} ≥ floor ${usd(P.reserveFloor)} · receivables ${usd(Object.values(receivables).reduce((a, b) => a + b, 0))} · Meadow remainder ${usd(plan2.later)} pending`);
 say.step(`audit log: ${auditPath}`);

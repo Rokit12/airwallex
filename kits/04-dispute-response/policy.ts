@@ -154,3 +154,18 @@ export function isEvidence(v: any): v is Evidence {
     && ["ipMatchesPriorOrders", "deliveryScanned", "deliverySigned", "refundAlreadyIssued"].every((k) => typeof v[k] === "boolean");
 }
 
+
+/**
+ * After an issuer rejects evidence, sending the same file again cannot change the
+ * outcome (the guide: do not resend it). Returns only documents whose content has
+ * not been submitted on this dispute before; none left means escalate, not re-challenge.
+ */
+export function freshEvidence<T>(docs: T[], alreadySent: ReadonlySet<string>, fingerprint: (d: T) => string): T[] {
+  const seen = new Set(alreadySent);
+  return docs.filter((d) => {
+    const f = fingerprint(d);
+    if (seen.has(f)) return false;
+    seen.add(f);
+    return true;
+  });
+}

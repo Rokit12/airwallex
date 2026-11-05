@@ -11,6 +11,7 @@
  */
 process.env.KIT ??= "kit04";
 import { writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { newRequestId } from "../../src/core/client.ts";
 import { RailsClient } from "../../src/core/rails.ts";
 import { Sandbox, awxTime, inHours } from "../../src/core/sandbox.ts";
@@ -22,7 +23,7 @@ import { auditPath, audit } from "../../src/core/audit.ts";
 import { screenUntrusted, type InjectionFinding } from "../../src/core/untrusted.ts";
 import { BUSINESS } from "../../src/core/business.ts";
 import { CASES, SECOND_ROUND_DOCS, type DemoCase } from "./cases.ts";
-import { decide, isEvidence, VISA_REASON, DEFAULT_POLICY, type DisputeFacts, type Evidence, type Decision, type Stage } from "./policy.ts";
+import { decide, isEvidence, freshEvidence, VISA_REASON, DEFAULT_POLICY, type DisputeFacts, type Evidence, type Decision, type Stage } from "./policy.ts";
 
 const TEST_CARD = { number: "4035501000000008", expiry_month: "12", expiry_year: "2030", cvc: "123" };
 
@@ -135,8 +136,21 @@ async function accept(c: DemoCase, f: DisputeFacts, dec: Extract<Decision, { act
   say.ok(`accepted ${f.disputeId} (${dec.reason}) → status ${res.status}`);
 }
 
+/** Evidence already submitted per dispute (content fingerprints), so a rejected file is never sent again. */
+const sentEvidence = new Map<string, Set<string>>();
+const fingerprint = (d: DemoCase["documents"][number]) => createHash("sha256").update(`${d.type}\n${d.title}\n${d.lines.join("\n")}`).digest("hex");
+
 async function challenge(c: DemoCase, f: DisputeFacts, dec: Extract<Decision, { action: "CHALLENGE" }>, docs: DemoCase["documents"]) {
-  const documents = await uploadDocs(docs);
+  const sent = sentEvidence.get(f.disputeId) ?? new Set<string>();
+  const fresh = freshEvidence(docs, sent, fingerprint);
+  const skipped = docs.length - fresh.length;
+  if (skipped) say.step(`${skipped} document(s) were already submitted and rejected on ${f.disputeId}: not sending them again`);
+  if (!fresh.length) {
+    say.decision(`${f.disputeId} challenge`, "ESCALATE", "No new evidence since the issuer's rejection; resubmitting the same files cannot change the outcome.");
+    escalateToPerson(c, f, dec);
+    return false;
+  }
+  const documents = await uploadDocs(fresh);
   const fileIds = documents.flatMap((d) => d.file_ids);
   const terms = termsFor(c, f, dec, fileIds);
   let approval = null;
@@ -168,7 +182,10 @@ async function challenge(c: DemoCase, f: DisputeFacts, dec: Extract<Decision, { 
     body.seller_info = { name: BUSINESS.name, store_name: BUSINESS.tradingName, store_url: BUSINESS.storeUrl, store_physical_address: `${BUSINESS.address.street_address}, ${BUSINESS.address.city}, ${BUSINESS.address.state} ${BUSINESS.address.postcode}, ${BUSINESS.countryName}` };
   }
   const res = await awx.post(`/pa/payment_disputes/${f.disputeId}/challenge`, body);
+  for (const d of fresh) sent.add(fingerprint(d));
+  sentEvidence.set(f.disputeId, sent);
   say.ok(`challenged ${f.disputeId} (${dec.reason}, ${fileIds.length} files) → status ${res.status}`);
+  return true;
 }
 
 function escalateToPerson(c: DemoCase, f: DisputeFacts, dec: Decision) {
@@ -252,8 +269,8 @@ if (challenged) {
     `win p ${before.winProbability} → ${dec2.winProbability}; chargeback fee now certain; challenge ${dec2.costChallenge} vs accept ${dec2.costAccept}.`,
   );
   if (dec2.action === "CHALLENGE") {
-    await challenge(c, f2, dec2, [...c.documents, ...SECOND_ROUND_DOCS]);
-    await sb.resolveDispute(disputeId, { in_favor_of: "MERCHANT", comment: "Cardholder authentication and delivery signature accepted." });
+    // Only new evidence goes in: the files the issuer already rejected are filtered out.
+    if (await challenge(c, f2, dec2, [...c.documents, ...SECOND_ROUND_DOCS])) await sb.resolveDispute(disputeId, { in_favor_of: "MERCHANT", comment: "Cardholder authentication and delivery signature accepted." });
   } else if (dec2.action === "ACCEPT") await accept(c, f2, dec2);
   else escalateToPerson(c, f2, dec2);
 }

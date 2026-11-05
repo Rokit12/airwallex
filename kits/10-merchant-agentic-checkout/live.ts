@@ -148,7 +148,13 @@ export async function runLive(cfg: AcpConfig) {
   if (!result.ok) {
     say.beat("exception", "The payment was declined.");
     say.step(`Airwallex: ${result.error}`);
-    const state = await acp.tool("get_checkout_session", { checkout_session_id: session.id });
+    // Retry only when the first attempt is verifiably not paid. If the session cannot be read, or shows an order, stop.
+    const state = await acp.tool("get_checkout_session", { checkout_session_id: session.id }).catch(() => null);
+    // ready_for_payment is the only state that proves nothing was paid; anything else (completed, in progress, unreadable) stops.
+    if (!state || state.status !== "ready_for_payment") {
+      say.decision("retry", "STOP", state ? `The session is ${state.status}, not ready_for_payment: the first attempt may have been paid, so no second payment is sent.` : "The checkout session could not be read, so the first attempt cannot be verified. No second payment is sent.");
+      throw new Error("first payment attempt not verifiable; stopped without retrying");
+    }
     say.decision("retry", "SAME CHECKOUT, NEW CARD", `The session is ${state.status} with no completed order, so nothing was charged. A new checkout could double-order if the first payment settled later; the shopper pays again on the same session.`);
     result = await attempt(2, "good");
   }
