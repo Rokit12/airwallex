@@ -29,6 +29,9 @@ standard delivery is fine, and I want to be able to return them.`;
 const BUYER = { email: "jordan.lee@example.com", first_name: "Jordan", last_name: "Lee" };
 const ADDRESS = { name: "Jordan Lee", line_one: "2400 Pearl Street", city: "Boulder", state: "CO", postal_code: "80302", country: "US" };
 
+/** Name on the test card (Airwallex sandbox test cards accept any name, a future expiry and any 3-digit CVC). */
+const CARDHOLDER = "Robinson Muiru";
+
 const major = (minor: number) => Math.round(minor) / 100;
 const totalOf = (s: any) => Number((s.totals ?? []).find((t: any) => t.type === "total")?.amount ?? NaN);
 
@@ -41,7 +44,7 @@ async function shopperTokenizes(acp: AcpShopper, sessionId: string, maxAmountMin
   const number = card === "declined" ? "4646464646464644" : "4035501000000008"; // Airwallex sandbox test cards
   const tok = await acp.tool("create_delegate_payment_token", {
     request: {
-      payment_method: { type: "card", card_number_type: "fpan", number, exp_month: "12", exp_year: "2030", cvc: "737", display_card_funding_type: "credit", name: ADDRESS.name },
+      payment_method: { type: "card", card_number_type: "fpan", number, exp_month: "12", exp_year: "2030", cvc: "737", display_card_funding_type: card === "declined" ? "credit" : "debit", name: CARDHOLDER },
       allowance: { reason: "one_time", checkout_session_id: sessionId, currency: "USD", max_amount: maxAmountMinor, expires_at: new Date(Date.now() + 30 * 60_000).toISOString() },
       billing_address: ADDRESS,
       risk_signals: [{ type: "card_testing", action: "authorized", score: 1 }],

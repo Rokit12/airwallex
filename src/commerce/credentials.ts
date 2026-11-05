@@ -128,7 +128,7 @@ class SandboxTestCardProvider implements CredentialsProvider {
     return { id: `mandate_test_${randomUUID().slice(0, 8)}`, amount: m.amount, currency: m.currency, merchant: m.merchant, termsHash: m.termsHash, provider: this.name };
   }
   async credentials(): Promise<CardCredentials> {
-    return { number: "4035501000000008", expiry_month: "12", expiry_year: "2030", cvc: "123", name: "Test Shopper" };
+    return { number: "4035501000000008", expiry_month: "12", expiry_year: "2030", cvc: "123", name: "Robinson Muiru" }; // Airwallex sandbox test card (Visa Debit, US): any future expiry, 3-digit CVC and name
   }
   async report(m: Mandate, r: { status: string; order?: string }) {
     this.reports.push({ mandate: m.id, ...r });

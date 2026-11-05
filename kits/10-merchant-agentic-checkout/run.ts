@@ -68,7 +68,7 @@ async function shopperPays(paymentUrl: string, card: { number: string; label: st
     await page.fill("#expiry_month", "12");
     await page.fill("#expiry_year", "2030");
     await page.fill("#cvc", "123");
-    await page.fill("#cardname", "Jordan Lee");
+    await page.fill("#cardname", "Robinson Muiru");
     await Promise.all([page.waitForURL(/\/orders\//), page.click("#paynow")]);
   } finally {
     await browser.close();
