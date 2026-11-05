@@ -122,7 +122,7 @@ export function parseCredential(raw: any): CardCredentials {
 }
 
 class SandboxTestCardProvider implements CredentialsProvider {
-  name = "Sandbox test card (Airi test mode pending)";
+  name = "Airwallex sandbox test card";
   readonly reports: { mandate: string; status: string; order?: string }[] = [];
   async createMandate(m: MandateRequest): Promise<Mandate> {
     return { id: `mandate_test_${randomUUID().slice(0, 8)}`, amount: m.amount, currency: m.currency, merchant: m.merchant, termsHash: m.termsHash, provider: this.name };

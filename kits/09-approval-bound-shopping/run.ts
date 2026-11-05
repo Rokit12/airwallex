@@ -6,9 +6,9 @@
  * approve the exact product, merchant, delivery and total.
  *  - The merchant raises the price after approval: the agent pauses, keeps the
  *    same checkout, and asks again.
- *  - Payment credentials come from the credentials provider (Airi CLI once
- *    access is granted; the sandbox test card until then) straight into the
- *    hosted payment form.
+ *  - Payment credentials come from the credentials provider (the Airwallex
+ *    sandbox test card, or the Airi CLI when AIRI_PAYMENT_METHOD_ID is set)
+ *    straight into the hosted payment form.
  *  - The submission times out after the payment went through: the agent checks
  *    the order before retrying and does not pay twice, then reports the result.
  *

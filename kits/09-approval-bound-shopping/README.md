@@ -43,5 +43,5 @@ echo "AIRI_PAYMENT_METHOD_ID=<id>" >> .env
 npm run kit9                        # confirm the payment with your passkey when the link appears
 ```
 
-Airi's test mode (a test card with a fake credential) is not released yet. Until it is, a mandate uses a real card from your Airi wallet, so leave `AIRI_PAYMENT_METHOD_ID` unset to run on the sandbox test card. The local store charges through the Airwallex sandbox, which moves no real money.
+Without `AIRI_PAYMENT_METHOD_ID` the kit pays with the Airwallex sandbox test card (Visa Debit 4035 5010 0000 0008, name Robinson Muiru), which Airwallex confirmed works for these kits. The local store charges through the Airwallex sandbox, which moves no real money.
 
