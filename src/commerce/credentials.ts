@@ -107,7 +107,10 @@ class AiriCliProvider implements CredentialsProvider {
     const file = join(dir, "cred.json");
     try {
       await this.cli(["mandate", "get-credential", "--mandate-id", m.id, "--file", file, "--timeout", "300"], 330_000);
-      return parseCredential(JSON.parse(readFileSync(file, "utf8")));
+      // The credential carries no cardholder name; use the one Airi holds for the chosen card.
+      const methods = await this.cli(["payment-methods", "list"]).catch(() => []);
+      const holder = (Array.isArray(methods) ? methods : []).find((x: any) => x.paymentMethodId === process.env.AIRI_PAYMENT_METHOD_ID)?.card?.name;
+      return parseCredential(JSON.parse(readFileSync(file, "utf8")), holder || undefined);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -119,7 +122,7 @@ class AiriCliProvider implements CredentialsProvider {
 }
 
 /** Read the credential file whatever its field names (number/pan/token, expiry as MM/YY or parts, cvv/cvc). */
-export function parseCredential(raw: any): CardCredentials {
+export function parseCredential(raw: any, fallbackName = "Airi Shopper"): CardCredentials {
   const c = raw.credential ?? raw.card ?? raw;
   const number = String(c.number ?? c.pan ?? c.tokenizedPan ?? c.tokenized_pan ?? c.token ?? c.cardNumber ?? "").replace(/\s/g, "");
   let month = c.expiry_month ?? c.expiryMonth ?? c.exp_month;
@@ -134,7 +137,7 @@ export function parseCredential(raw: any): CardCredentials {
   const cvc = String(c.cvv ?? c.cvc ?? c.cvv2 ?? c.securityCode ?? "");
   if (!number || !month || !year || !cvc) throw new Error("Airi credential file is missing a card field (number, expiry or CVV)");
   const y = String(year);
-  return { number, expiry_month: String(month).padStart(2, "0"), expiry_year: y.length === 2 ? `20${y}` : y, cvc, name: String(c.name ?? c.cardholderName ?? "Airi Shopper") };
+  return { number, expiry_month: String(month).padStart(2, "0"), expiry_year: y.length === 2 ? `20${y}` : y, cvc, name: String(c.name ?? c.cardholderName ?? fallbackName) };
 }
 
 class SandboxTestCardProvider implements CredentialsProvider {
