@@ -154,22 +154,43 @@ export class AirwallexClient {
     }
   }
 
-  /** Evidence uploads go to the files host. Airwallex accepts JPG or PDF here (not PNG). */
-  async uploadFile(filename: string, bytes: Uint8Array, mime: "application/pdf" | "image/jpeg", notes?: string): Promise<{ file_id: string }> {
-    await this.throttle();
-    const form = new FormData();
-    form.append("file", new Blob([new Uint8Array(bytes)], { type: mime }), filename);
-    if (notes) form.append("notes", notes.slice(0, 50));
-    const res = await fetch(`${this.filesBase}/api/v1/files/upload`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${await this.login()}` },
-      body: form,
-    });
-    const text = await res.text();
-    const data = safeJson(text);
-    audit({ kind: "upload", filename, status: res.status, res: data });
-    if (!res.ok) throw new AwxError(res.status, data?.code ?? "upload_failed", data?.message ?? text.slice(0, 200), data, "/files/upload");
-    return data;
+  /**
+   * Evidence uploads go to the files host. Airwallex accepts JPG or PDF here (not PNG).
+   * The upload only stores a file and returns a file_id, so a transient failure (5xx, a timeout, 429) is retried
+   * a capped number of times with a short backoff (Airwallex's advice). A retry after a timeout may leave an
+   * unused file behind; only the file_id from the upload that succeeded is ever used.
+   */
+  async uploadFile(filename: string, bytes: Uint8Array, mime: "application/pdf" | "image/jpeg", notes?: string, attempts = 4): Promise<{ file_id: string }> {
+    for (let attempt = 1; ; attempt++) {
+      await this.throttle();
+      const form = new FormData();
+      form.append("file", new Blob([new Uint8Array(bytes)], { type: mime }), filename);
+      if (notes) form.append("notes", notes.slice(0, 50));
+      let res: Response;
+      try {
+        res = await fetch(`${this.filesBase}/api/v1/files/upload`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${await this.login()}` },
+          body: form,
+          signal: AbortSignal.timeout(30_000),
+        });
+      } catch (err) {
+        // Timeout or network error: the file may or may not have been stored; a new upload is harmless.
+        audit({ kind: "upload", filename, status: 0, error: (err as Error).message, attempt });
+        if (attempt >= attempts) throw err;
+        await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1)));
+        continue;
+      }
+      const text = await res.text();
+      const data = safeJson(text);
+      audit({ kind: "upload", filename, status: res.status, res: data, attempt });
+      if (res.ok) return data;
+      if ((res.status >= 500 || res.status === 429) && attempt < attempts) {
+        await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1)));
+        continue;
+      }
+      throw new AwxError(res.status, data?.code ?? "upload_failed", data?.message ?? text.slice(0, 200), data, "/files/upload");
+    }
   }
 
   private async throttle() {

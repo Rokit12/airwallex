@@ -12,7 +12,7 @@ A chargeback queue at an online merchant. The merchant pays a USD 25 chargeback 
 
 ## Live or emulated
 
-Fully live: payment intents confirmed with the documented test card, real disputes created with the simulation endpoints, then accepted, challenged with uploaded evidence, escalated and resolved on Airwallex. On an account without native API access for payments, the card confirmation falls back to the card emulator and the run is labelled EMULATED.
+Fully live: payment intents confirmed with the documented test card, real disputes created with the simulation endpoints, then accepted, challenged with uploaded evidence, escalated and resolved on Airwallex. On an account without native API access for payments, the card confirmation falls back to the card emulator and the run is labelled EMULATED. Evidence uploads to `files.sandbox.airwallex.com` are retried on 5xx, timeouts and 429 only, up to four attempts with a short backoff, as Airwallex advised: an upload only stores a file and returns a `file_id`, so a retry can at most leave an unused file, and the challenge uses only the `file_id` from the upload that succeeded.
 
 ## Prompt injection in the evidence
 
