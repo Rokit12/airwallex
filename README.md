@@ -320,7 +320,7 @@ Status on our US sandbox account: **every Airwallex call in all fifteen kits run
 | 8 | Connected accounts, seller payouts, reserves, refunds | – |
 | 9 | Browser shopping, live card payments and declines | Airi CLI card credentials (wired to the real CLI; uses the sandbox test card until Airi releases test mode) |
 | 10 | Airwallex Agentic Commerce: onboarding, catalogue ingest, the merchant MCP endpoint, checkout sessions priced by the merchant, delegate payment tokens, payments, the declined card and retry | Nothing, once the merchant is onboarded (its endpoints run on AWS). Before onboarding, the kit uses its local merchant MCP server |
-| 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee | Metal spending limits for the kit's 200+ payments (each on-chain payment takes seconds and faucet-limited gas; `npm run metal:check` proves the same limits live: bind, pay under, refused over) |
+| 11 | Deposits credited by Metal transaction hash, FX to EUR, SWIFT payout of the licence fee · Metal testnet: accounts, spending limits bound and replaced, 400+ mandate payments, the over-cap refusal recorded on chain, the sweep paid once | Nothing when `METAL_RPC_URL` is set. The payments take about three minutes; `METAL=emulated` runs it in seconds |
 | 12 | Card pre-authorization holds, increments, single captures, cancels · Metal clearing on testnet: deposits, signed running totals, withdrawals | Nothing when Metal's clearing service is reachable. A live run takes 15–20 minutes because withdrawals wait for Metal's challenge windows; `METAL=emulated` runs it in 30 seconds |
 | 13 | Deposits with payer and reference, read back from the statement · beneficiary schema and validation · the refund payout · FX quote and conversion for the placement | Nothing |
 | 14 | Payment intents, declines with issuer response codes (51, 54, 05, risk), retries on the same intent | Nothing |
@@ -328,7 +328,7 @@ Status on our US sandbox account: **every Airwallex call in all fifteen kits run
 
 **FX and payouts inside new connected accounts.** Airwallex applies FX and payout pricing to a connected account a little while after it is created; until then those calls are refused with `unconfigured_client_fee` or `fee_unknown`. We measured FX pricing after about 2 minutes and payout pricing after 30 seconds to 3 minutes. Airwallex confirmed there is no status or webhook that marks pricing as ready, and no published delay. So, as they advised, kits 6 and 7 wait until each fresh account is ACTIVE (`GET /accounts/{id}`; the `account.connected` webhook carries the same signal). From there they retry with backoff (up to `FEE_WAIT_SECONDS`, default 300), and then run inside the customer's own account. If pricing still hasn't arrived by then, they fall back to routing that call through the platform account (the customer's own balance is charged first, so funds are never mixed) and the run says so.
 
-On Metal testnet, faucet funding, x402 payments and spending limits (bind, pay under the cap, refused over it) are live: `npm run metal:check` proves them. Kit 12's clearing runs live on testnet too; `npm run metal:withdraw` brings unspent clearing deposits back to the operator after Metal finalizes them.
+On Metal testnet, faucet funding, x402 payments and spending limits (bind, pay under the cap, refused over it) are live: `npm run metal:check` proves them. Kit 11 runs all of its 400+ payments live: one faucet top-up at most per run, to one funding key that funds every account by transfer (Metal's advice: one faucet call per account would hit the ten-a-day limit), and payments sent about twelve at a time, since Metal's facilitator submits each one and pays its gas. Kit 12's clearing runs live on testnet too; `npm run metal:withdraw` brings unspent clearing deposits back to the operator after Metal finalizes them.
 
 ## Configuration
 
@@ -355,7 +355,7 @@ Behind a proxy on Node 22+, run with `NODE_USE_ENV_PROXY=1`.
 ## Tests
 
 ```sh
-npm test                     # 102 tests: policy for all fifteen kits, approvals, the beneficiary schema check and the AWS console API
+npm test                     # 105 tests: policy for all fifteen kits, approvals, the beneficiary schema check, x402 settlement and the AWS console API
 npm run typecheck
 npm run verify               # both, as CI runs them
 ```

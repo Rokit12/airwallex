@@ -24,8 +24,9 @@ import { say, usd } from "../../src/core/narrate.ts";
 import { explain } from "../../src/core/llm.ts";
 import { requestApproval, assertApproved, type Terms } from "../../src/core/approval.ts";
 import { auditPath, audit } from "../../src/core/audit.ts";
-import { openMetal } from "../../src/metal/rail.ts";
-import { newAddress, MetalRefused, type Address, type Mandate } from "../../src/metal/emulator.ts";
+import { openMandates } from "../../src/metal/rail.ts";
+import { inBatches } from "../../src/metal/mandates.ts";
+import { MetalRefused, type Address, type Mandate } from "../../src/metal/emulator.ts";
 import { startSeller, payFetch, exactPayment, PaymentRefused, type Seller } from "../../src/metal/x402.ts";
 import { fmt } from "../../src/metal/units.ts";
 import { checkAllocation, proposeReallocation, sweepAmount, afterTimeout, depositDecision, resolveDisputedBatch, DEFAULT_POLICY, type AgentId, type AgentLimits, type AgentState, type DisputedCharge } from "./policy.ts";
@@ -43,47 +44,54 @@ try {
 
   // ── Setup ────────────────────────────────────────────────────────────────
   say.beat("setup", "Fund the business's Metal account and give each agent its own key and limits.");
-  const metal = await openMetal();
+  const metal = await openMandates();
   const { chain, facilitator } = metal;
-  const owner = newAddress(); // the owner's MetalAccount; its key stays away from every agent
-  const upstreamPayTo = newAddress();
-  const treasuryWallet = newAddress(); // a Metal address the treasury controls, the bridge to Airwallex
-  chain.faucet(owner, OPENING_BALANCE_CENTS);
-  say.step(`owner account ${short(owner)} · balance ${fmt(chain.balanceOf(owner))} on ${chain.network}`);
+  const live = metal.mode === "live";
+  const BUYER_FUNDS = 600; // each customer agent's account
+  if (metal.mode === "live") {
+    // One faucet top-up at most, to one key; every account below is funded from it (Metal's advice).
+    const f = await metal.chain.ensureFunds(OPENING_BALANCE_CENTS + BUYERS.length * BUYER_FUNDS + 50);
+    say.step(`funding key ${short(f.funder)} holds ${fmt(f.cents)}${f.faucet ? " after one faucet top-up" : " (no faucet call needed)"}; it funds every account in this run`);
+  }
+  const upstreamPayTo = chain.newPayee();
+  const treasuryWallet = chain.newPayee(); // a Metal address the treasury controls, the bridge to Airwallex
+  const owner = await chain.openAccount("owner", OPENING_BALANCE_CENTS); // the owner's MetalAccount; its key stays away from every agent
+  say.step(`owner account ${short(owner)} · balance ${fmt(await chain.balanceOf(owner))} on ${chain.network}`);
 
-  const alloc = checkAllocation(chain.balanceOf(owner), OPENING_LIMITS);
+  const alloc = checkAllocation(await chain.balanceOf(owner), OPENING_LIMITS);
   if (!alloc.ok) throw new Error(`budgets ${alloc.totalCents}c exceed the room ${alloc.roomCents}c`);
   say.decision("allocation", "FITS", `Agents may spend ${fmt(alloc.budgetsCents)} between them (the ceiling is ${fmt(DEFAULT_POLICY.agentCeilingCents)}), inside the ${fmt(alloc.roomCents)} balance left after the gas reserve. Metal checks each mandate alone, so the sum is checked in code.`);
 
   const payeesFor = (a: AgentId): Address[] => (a === "SOURCING" ? [upstreamPayTo] : a === "TREASURY" ? [treasuryWallet] : []);
   const terms = (l: AgentLimits) => ({ payees: l.payees === "LISTED" ? payeesFor(l.agent) : [], capCents: l.capCents, budgetCents: l.budgetCents, expiresAt: Date.now() + 30 * 86_400_000, description: `${l.agent.toLowerCase()} agent` });
-  const mandates: Record<AgentId, Mandate> = {
-    SOURCING: chain.bind(owner, "SOURCING", terms(OPENING_LIMITS[0]!)),
-    SUPPORT: chain.bind(owner, "SUPPORT", terms(OPENING_LIMITS[1]!)),
-    TREASURY: chain.bind(owner, "TREASURY", terms(OPENING_LIMITS[2]!)),
-  };
-  const limitsTable = () =>
-    say.table((Object.keys(mandates) as AgentId[]).map((a) => {
-      const s = chain.status(mandates[a].id);
+  // The owner key signs each binding in turn (one key, one nonce sequence).
+  const mandates = {} as Record<AgentId, Mandate>;
+  mandates.SOURCING = await chain.bind(owner, "SOURCING", terms(OPENING_LIMITS[0]!));
+  mandates.SUPPORT = await chain.bind(owner, "SUPPORT", terms(OPENING_LIMITS[1]!));
+  mandates.TREASURY = await chain.bind(owner, "TREASURY", terms(OPENING_LIMITS[2]!));
+  const limitsTable = async () =>
+    say.table(await Promise.all((Object.keys(mandates) as AgentId[]).map(async (a) => {
+      const s = await chain.status(mandates[a].id);
       const m = chain.mandate(mandates[a].id);
       return { agent: a, mandate: short(m.id), payees: m.payees.length ? "listed" : "any", cap: fmt(s.capCents), budget: fmt(s.budgetCents), spent: fmt(s.spentCents), payments: s.payments };
-    }));
-  limitsTable();
+    })));
+  await limitsTable();
+  if (live) say.step(`limits bound on Metal testnet · ${chain.explorer("").replace(/\/tx\/$/, "")}/address/${owner}`);
 
   // Buyers are other businesses' agents paying from their own Metal accounts.
-  const buyers = BUYERS.map((name) => {
-    const acct = newAddress();
-    chain.faucet(acct, 2_000);
-    return { name, acct, mandate: chain.bind(acct, `buyer:${name}`, { payees: [], capCents: 100, budgetCents: 2_000, expiresAt: Date.now() + 86_400_000, description: "buyer" }) };
-  });
+  const buyers = await Promise.all(BUYERS.map(async (name, i) => {
+    const acct = await chain.openAccount(`buyer-${i + 1}`, BUYER_FUNDS);
+    return { name, acct, mandate: await chain.bind(acct, `buyer:${name}`, { payees: [], capCents: 100, budgetCents: BUYER_FUNDS, expiresAt: Date.now() + 86_400_000, description: "buyer" }) };
+  }));
+  say.step(`${buyers.length} customer agents, each with its own Metal account and spending limit`);
 
   // ── x402 sellers ─────────────────────────────────────────────────────────
   let upstreamPrice = UPSTREAM.priceCents;
   let apiPrice = API.priceCents;
-  let call = 0; // 1-based number of the query being served
+  let call = 0; // queries started so far; each request carries its 1-based number in x-n
   const versionFor = (n: number) => (n >= BAD_BATCH_CALLS.from && n <= BAD_BATCH_CALLS.to ? UPSTREAM.badVersion : `feed-2026-10-28T${n < BAD_BATCH_CALLS.from ? "08" : "10"}`);
   const upstream = await startSeller(UPSTREAM.name, {
-    [UPSTREAM.path]: { scheme: "exact", price: () => upstreamPrice, payTo: upstreamPayTo, description: "reference price feed", handle: () => ({ version: versionFor(call), quote: "EUR/USD 1.0842, Brent 81.20" }) },
+    [UPSTREAM.path]: { scheme: "exact", price: () => upstreamPrice, payTo: upstreamPayTo, description: "reference price feed", handle: (req) => ({ version: versionFor(Number(req.headers["x-n"])), quote: "EUR/USD 1.0842, Brent 81.20" }) },
   }, facilitator);
   sellers.push(upstream);
 
@@ -91,8 +99,8 @@ try {
   /** Every sale: who paid, for which query, at what price, and which data version it returned. */
   const sales = new Map<string, { buyer: Address; n: number; priceCents: number; version: string }>();
   const refunded = new Set<string>();
-  const refund = (to: Address, cents: number, why: string, paymentId: string) => {
-    const ev = chain.pull(mandates.SUPPORT.id, to, cents, { paymentId: `refund-${paymentId}` });
+  const refund = async (to: Address, cents: number, why: string, paymentId: string) => {
+    const ev = await chain.pull(mandates.SUPPORT.id, to, cents, { paymentId: `refund-${paymentId}` });
     stats.refunds += cents;
     refunded.add(paymentId);
     audit({ kind: "decision", subject: "refund", action: why, paymentId, cents });
@@ -107,20 +115,23 @@ try {
       handle: async (req) => {
         const buyer = String(req.headers["x-buyer"] ?? "") as Address;
         const paidId = String(req.headers["x-call"] ?? "");
-        stats.revenue += apiPrice;
+        const n = Number(req.headers["x-n"]);
+        const price = apiPrice;
+        stats.revenue += price;
         try {
-          const up = await payFetch<{ version: string; quote: string }>(`${upstream.url}${UPSTREAM.path}`, exactPayment(mandates.SOURCING.id));
+          const up = await payFetch<{ version: string; quote: string }>(`${upstream.url}${UPSTREAM.path}`, exactPayment(mandates.SOURCING.id), undefined, { "x-n": String(n) });
           stats.upstream += up.price;
           stats.served += 1;
-          sales.set(paidId, { buyer, n: call, priceCents: apiPrice, version: up.body.version });
+          sales.set(paidId, { buyer, n, priceCents: price, version: up.body.version });
           return { data: up.body.quote, version: up.body.version };
         } catch (err) {
           if (!(err instanceof PaymentRefused)) throw err;
           stats.refused += 1;
-          sales.set(paidId, { buyer, n: call, priceCents: apiPrice, version: "none" });
-          const ev = refund(buyer, apiPrice, "upstream refused", paidId);
+          sales.set(paidId, { buyer, n, priceCents: price, version: "none" });
+          const ev = await refund(buyer, price, "upstream refused", paidId);
           say.warn(`sourcing refused by Metal: ${err.reason} — ${err.detail}${err.tx ? ` · refusal recorded in ${short(err.tx)}` : ""}`);
-          say.step(`support refunded ${fmt(apiPrice)} to the customer · ${short(ev.tx)}`);
+          if (live && err.tx) say.step(`refusal on chain: ${chain.explorer(err.tx)}`);
+          say.step(`support refunded ${fmt(price)} to the customer · ${short(ev.tx)}`);
           return { error: "upstream unavailable; refunded" };
         }
       },
@@ -129,19 +140,28 @@ try {
   sellers.push(api);
   say.step(`x402 sellers up: ${API.name} at ${fmt(apiPrice)}/query (pays to the owner account) · upstream ${UPSTREAM.name} at ${fmt(upstreamPrice)}/request`);
 
-  async function serve(n: number) {
-    for (let i = 0; i < n; i++) {
-      const b = buyers[call % buyers.length]!;
-      call += 1;
-      const pay = exactPayment(b.mandate.id);
-      const res = await fetch(`${api.url}${API.path}`); // buyer reads the 402 offer…
-      if (res.status !== 402) throw new Error("API should ask for payment first");
-      const offer = JSON.parse(Buffer.from(res.headers.get("payment-required")!, "base64").toString()).accepts[0];
-      const p = pay(offer); // …signs it under its own mandate, and repeats the request with the payment
-      const paid = await fetch(`${api.url}${API.path}`, { headers: { "payment-signature": Buffer.from(JSON.stringify(p)).toString("base64"), "x-buyer": b.acct, "x-call": p.scheme === "exact" ? p.paymentId : "" } });
-      if (!paid.ok) throw new Error(`buyer call failed: ${paid.status}`);
-      await paid.json();
-    }
+  async function serveOne(n: number) {
+    const b = buyers[(n - 1) % buyers.length]!;
+    const pay = exactPayment(b.mandate.id);
+    const res = await fetch(`${api.url}${API.path}`, { headers: { "x-n": String(n) } }); // buyer reads the 402 offer…
+    if (res.status !== 402) throw new Error("API should ask for payment first");
+    const offer = JSON.parse(Buffer.from(res.headers.get("payment-required")!, "base64").toString()).accepts[0];
+    const p = pay(offer); // …signs it under its own mandate, and repeats the request with the payment
+    const paid = await fetch(`${api.url}${API.path}`, { headers: { "payment-signature": Buffer.from(JSON.stringify(p)).toString("base64"), "x-buyer": b.acct, "x-call": p.scheme === "exact" ? p.paymentId : "", "x-n": String(n) } });
+    if (!paid.ok) throw new Error(`buyer call failed: ${paid.status} ${await paid.text()}`);
+    await paid.json();
+  }
+  /** Serve `count` queries; on Metal testnet many settle at once (each is its own pair of payments). */
+  async function serve(count: number) {
+    const ns = Array.from({ length: count }, (_, i) => call + i + 1);
+    call += count;
+    const t0 = Date.now();
+    let done = 0;
+    await inBatches(ns, chain.concurrency, async (n) => {
+      await serveOne(n);
+      done += 1;
+      if (live && (done % 30 === 0 || done === count)) say.step(`${done}/${count} queries settled on Metal testnet (${Math.round((Date.now() - t0) / 1000)} s, ${chain.concurrency} at a time)`);
+    });
   }
 
   // ── Serve ────────────────────────────────────────────────────────────────
@@ -153,27 +173,27 @@ try {
   say.beat("new information", "The upstream seller raises its price.");
   say.document(UPSTREAM.notice);
   upstreamPrice = UPSTREAM.raisedPriceCents;
-  say.step(`the next 402 offer from ${UPSTREAM.name} asks ${fmt(upstreamPrice)}; the sourcing cap is ${fmt(chain.status(mandates.SOURCING.id).capCents)}`);
+  say.step(`the next 402 offer from ${UPSTREAM.name} asks ${fmt(upstreamPrice)}; the sourcing cap is ${fmt((await chain.status(mandates.SOURCING.id)).capCents)}`);
   await serve(1);
 
   say.beat("verify", "Read the sourcing agent's payments and refusals back from the chain.");
-  const history = chain.verify(mandates.SOURCING.id);
+  const history = await chain.verify(mandates.SOURCING.id);
   const refusals = history.filter((e) => e.kind === "refusal");
   say.table(history.slice(-3).map((e) => ({ block: e.block, kind: e.kind, amount: fmt(e.cents ?? 0), reason: e.reason ?? "", tx: short(e.tx) })));
   say.ok(`chain shows ${history.length - refusals.length} payments and ${refusals.length} refusal (${refusals[0]?.reason}); the refusal moved nothing`);
 
   // ── Reallocate ───────────────────────────────────────────────────────────
   say.beat("plan", "Treasury proposes new limits that keep the API running and the sum inside the balance.");
-  const states = (): AgentState[] =>
-    (Object.keys(mandates) as AgentId[]).map((a) => {
-      const s = chain.status(mandates[a].id);
-      return { agent: a, capCents: s.capCents, budgetCents: s.budgetCents, spentCents: s.spentCents, payees: chain.mandate(mandates[a].id).payees.length ? "LISTED" : "ANY" };
-    });
+  const states = (): Promise<AgentState[]> =>
+    Promise.all((Object.keys(mandates) as AgentId[]).map(async (a) => {
+      const s = await chain.status(mandates[a].id);
+      return { agent: a, capCents: s.capCents, budgetCents: s.budgetCents, spentCents: s.spentCents, payees: chain.mandate(mandates[a].id).payees.length ? "LISTED" as const : "ANY" as const };
+    }));
   const treasuryNeed = OPENING_LIMITS[2]!.budgetCents; // the whole treasury budget is earmarked for this month's sweep
-  const r = proposeReallocation({ agents: states(), balanceCents: chain.balanceOf(owner), newUpstreamPriceCents: upstreamPrice, apiPriceCents: apiPrice, remainingCalls: REMAINING_CALLS_EXPECTED, treasuryNeedCents: treasuryNeed });
-  say.step(`expected this period: ${REMAINING_CALLS_EXPECTED} more upstream requests × ${fmt(upstreamPrice)} = ${fmt(r.sourcingNeedCents)} · sourcing has ${fmt(states()[0]!.budgetCents - states()[0]!.spentCents)} left · treasury keeps its ${fmt(treasuryNeed)} for the earnings sweep`);
+  const before = await states();
+  const r = proposeReallocation({ agents: before, balanceCents: await chain.balanceOf(owner), newUpstreamPriceCents: upstreamPrice, apiPriceCents: apiPrice, remainingCalls: REMAINING_CALLS_EXPECTED, treasuryNeedCents: treasuryNeed });
+  say.step(`expected this period: ${REMAINING_CALLS_EXPECTED} more upstream requests × ${fmt(upstreamPrice)} = ${fmt(r.sourcingNeedCents)} · sourcing has ${fmt(before[0]!.budgetCents - before[0]!.spentCents)} left · treasury keeps its ${fmt(treasuryNeed)} for the earnings sweep`);
   say.decision("limits", r.action, await explain({ ...r }, r.reason));
-  const before = states();
   say.table(r.limits.map((l) => {
     const b = before.find((x) => x.agent === l.agent)!;
     return { agent: l.agent, cap: `${fmt(b.capCents)} → ${fmt(l.capCents)}`, budget: `${fmt(b.budgetCents)} → ${fmt(l.budgetCents)}`, spent: fmt(b.spentCents) };
@@ -185,15 +205,15 @@ try {
   assertApproved(t, await requestApproval(t, "Approve the new spending limits? The owner key signs them; agents never hold it."));
   for (const l of r.limits) {
     const old = mandates[l.agent];
-    const s = chain.status(old.id);
+    const s = await chain.status(old.id);
     if (s.capCents === l.capCents && s.budgetCents === l.budgetCents) continue;
-    mandates[l.agent] = chain.replace(old.id, terms(l));
+    mandates[l.agent] = await chain.replace(old.id, terms(l));
   }
-  const fits = checkAllocation(chain.balanceOf(owner), states());
+  const fits = checkAllocation(await chain.balanceOf(owner), await states());
   if (!fits.ok) throw new Error("new limits exceed the balance");
   apiPrice = r.apiPriceCents;
   say.ok(`mandates replaced (spend carried over); budgets total ${fmt(fits.budgetsCents)} of the ${fmt(DEFAULT_POLICY.agentCeilingCents)} ceiling; agents may still spend ${fmt(fits.totalCents)}; queries now ${fmt(apiPrice)}`);
-  limitsTable();
+  await limitsTable();
 
   say.beat("serve", `Customers keep buying at ${fmt(apiPrice)}; sourcing now pays ${fmt(upstreamPrice)} within its new cap.`);
   const servedBefore = stats.served;
@@ -207,26 +227,29 @@ try {
   say.document(UPSTREAM.correction);
   const disputedIds = [...sales.entries()].filter(([, v]) => v.buyer === disputer.acct && v.n >= DISPUTE.fromCall && v.n <= DISPUTE.toCall).map(([id]) => id);
   // The signed orders: each charge is a payment the customer's own key signed under its own mandate.
-  const signed = new Map(chain.verify(disputer.mandate.id).filter((e) => e.kind === "payment" && e.to === owner && e.paymentId).map((e) => [e.paymentId!, e]));
+  const signed = new Map((await chain.verify(disputer.mandate.id)).filter((e) => e.kind === "payment" && e.to?.toLowerCase() === owner.toLowerCase() && e.paymentId).map((e) => [e.paymentId!, e]));
   const charges: DisputedCharge[] = disputedIds.map((id) => ({ paymentId: id, signedOnChain: signed.has(id), dataVersion: sales.get(id)!.version, alreadyRefunded: refunded.has(id) }));
   const d = resolveDisputedBatch(charges, [UPSTREAM.badVersion], (id) => sales.get(id)!.priceCents);
   say.table(d.lines.map((l) => ({ query: sales.get(l.paymentId)!.n, signed_order: l.signedOnChain ? `block ${signed.get(l.paymentId)!.block}` : "none", data: l.dataVersion, outcome: l.outcome, refund: fmt(l.refundCents) })));
   say.decision("disputed batch", d.summary.noSuchCharge ? "PARTLY_UNPROVEN" : "SIGNED_BY_CUSTOMER", await explain({ ...d.summary, refundCents: d.refundCents }, `All ${charges.length} disputed charges are payments signed under ${disputer.name}'s own mandate, so its agent did place them. ${d.summary.refund} returned data from the withdrawn batch ${UPSTREAM.badVersion}: refund those. ${d.summary.alreadyRefunded} was already refunded when the upstream refused it, so it is not refunded again. The other ${d.summary.upheld} stand.`));
-  for (const l of d.lines.filter((x) => x.outcome === "REFUND_WRONG_DATA")) refund(disputer.acct, l.refundCents, "wrong data", l.paymentId);
-  const supportLeft = chain.status(mandates.SUPPORT.id);
+  await inBatches(d.lines.filter((x) => x.outcome === "REFUND_WRONG_DATA"), chain.concurrency, (l) => refund(disputer.acct, l.refundCents, "wrong data", l.paymentId));
+  const supportLeft = await chain.status(mandates.SUPPORT.id);
   say.ok(`support refunded ${d.summary.refund} queries (${fmt(d.refundCents)}) from its own budget, each under its ${fmt(supportLeft.capCents)} cap · support has ${fmt(supportLeft.remainingCents)} left · no charge refunded twice`);
 
   // ── Treasury to Airwallex ────────────────────────────────────────────────
   say.beat("treasury", "Move earnings above what the agents may still spend to Airwallex, then pay the licence fee in euros.");
-  const sweep = Math.min(sweepAmount(chain.balanceOf(owner), states()), chain.status(mandates.TREASURY.id).capCents, chain.status(mandates.TREASURY.id).remainingCents);
-  const sweepId = `sweep-${new Date().toISOString().slice(0, 10)}`;
-  say.step(`sweep ${fmt(sweep)}: balance ${fmt(chain.balanceOf(owner))} minus sourcing and support headroom and the gas reserve`);
-  const sent = chain.pull(mandates.TREASURY.id, treasuryWallet, sweep, { paymentId: sweepId });
-  say.warn("the facilitator did not answer within 5 s: the payout is unconfirmed. Reading the chain before anything else.");
-  const onChain = chain.verify(mandates.TREASURY.id).find((e) => e.paymentId === sweepId);
+  const tStatus = await chain.status(mandates.TREASURY.id);
+  const balanceNow = await chain.balanceOf(owner);
+  const sweep = Math.min(sweepAmount(balanceNow, await states()), tStatus.capCents, tStatus.remainingCents);
+  const sweepId = `sweep-${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}`;
+  say.step(`sweep ${fmt(sweep)}: balance ${fmt(balanceNow)} minus sourcing and support headroom and the gas reserve`);
+  const sent = await chain.pull(mandates.TREASURY.id, treasuryWallet, sweep, { paymentId: sweepId });
+  if (live) say.step(`payout on chain: ${chain.explorer(sent.tx)}`);
+  say.step("Before any retry of a payout, the agent reads the chain: a lost answer must never become a second payment.");
+  const onChain = (await chain.verify(mandates.TREASURY.id)).find((e) => e.paymentId === sweepId);
   const next = afterTimeout(onChain ? "paid" : "not_found");
   say.decision("sweep payout", next, onChain ? `Found on chain in block ${onChain.block} (${short(onChain.tx)}): already paid, so nothing is resent.` : "Not on chain: resend under the same payment id.");
-  const again = chain.pull(mandates.TREASURY.id, treasuryWallet, sweep, { paymentId: sweepId });
+  const again = await chain.pull(mandates.TREASURY.id, treasuryWallet, sweep, { paymentId: sweepId });
   say.step(`resending under the same payment id returns the same settlement (${again.tx === sent.tx ? "no second payment" : "NEW PAYMENT"})`);
 
   const ga = await sb.usdGlobalAccount();
@@ -269,16 +292,18 @@ try {
   say.ok(`licence ${LICENCE.invoice}: EUR ${LICENCE.amount} to ${LICENCE.licensor} by SWIFT (fee ${tr.fee_amount ?? swiftFee}) → ${status}`);
 
   // ── Result ───────────────────────────────────────────────────────────────
-  say.beat("result", metal.mode === "emulated" ? "Final state (Metal side EMULATED; Airwallex live)." : "Final state read back from Metal and Airwallex.");
-  limitsTable();
-  const final = checkAllocation(chain.balanceOf(owner), states());
+  say.beat("result", metal.mode === "emulated" ? "Final state (Metal side EMULATED; Airwallex live)." : "Final state read back from Metal testnet and Airwallex.");
+  await limitsTable();
+  const finalStates = await states();
+  const ownerNow = await chain.balanceOf(owner);
+  const final = checkAllocation(ownerNow, finalStates);
   say.table([
     { item: "Query revenue (x402)", usdz: fmt(stats.revenue) },
     { item: "Upstream purchases", usdz: fmt(-stats.upstream) },
     { item: "Refunds", usdz: fmt(-stats.refunds) },
     { item: "Swept to Airwallex", usdz: fmt(-sweep) },
-    { item: "Owner account now", usdz: fmt(chain.balanceOf(owner)) },
-    { item: "Budgets left, all agents", usdz: fmt(states().reduce((s, a) => s + a.budgetCents - a.spentCents, 0)) },
+    { item: "Owner account now", usdz: fmt(ownerNow) },
+    { item: "Budgets left, all agents", usdz: fmt(finalStates.reduce((s, a) => s + a.budgetCents - a.spentCents, 0)) },
   ]);
   const good = final.ok && status === "PAID" && refusals.length === 1;
   say[good ? "ok" : "fail"](`one refusal, no unapproved limit change, disputed batch resolved (${d.summary.refund} refunded, none twice), sweep paid once and credited once, licence fee ${status}; budgets ${fmt(final.budgetsCents)} within the ${fmt(DEFAULT_POLICY.agentCeilingCents)} ceiling and what agents may still spend (${fmt(final.totalCents)}) ${final.ok ? "fits" : "EXCEEDS"} the balance after gas (${fmt(final.roomCents)})`);

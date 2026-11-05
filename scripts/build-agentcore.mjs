@@ -62,6 +62,8 @@ mkdirSync(join(out, "node_modules", ".bin"), { recursive: true });
 const metalCli = join(out, "node_modules", ".bin", "metal-agent");
 await build({ ...common, entryPoints: ["node_modules/@metalntwx/metal-agent/dist/index.js"], outfile: metalCli, banner: { js: "#!/usr/bin/env node\n" + common.banner.js } });
 chmodSync(metalCli, 0o755);
+// metal-agent reads its networks file from ../networks.json beside its own script.
+cpSync("node_modules/@metalntwx/metal-agent/networks.json", join(out, "node_modules", "networks.json"));
 
 // Chromium for linux/arm64, cached between builds.
 const cache = join(root, ".cache", `chromium-${CHROMIUM_VERSION}-arm64.tar`);

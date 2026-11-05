@@ -61,6 +61,22 @@ export class Facilitator {
   }
 }
 
+/** Anything that can settle an offer's payment: the emulator's facilitator, or kit 11's mandate facilitator. */
+export interface Settles {
+  settle(p: Payment, offer: Offer, provider: string): { tx: string; detail: string } | Promise<{ tx: string; detail: string }>;
+}
+
+/** Settles "exact" payments as mandate pulls on a MandateChain (emulated or Metal testnet), refusals recorded. */
+export class MandateFacilitator implements Settles {
+  constructor(private readonly chain: { pull(id: string, to: Address, cents: number, o?: { paymentId?: string; recordRefusal?: boolean }): Promise<{ tx: string; block: number }>; mode: string }) {}
+  async settle(p: Payment, offer: Offer) {
+    if (p.payTo !== offer.payTo || p.amount !== offer.amount) throw new Error("payment does not match the offer");
+    if (p.scheme !== "exact") throw new Error("this facilitator takes exact payments only");
+    const ev = await this.chain.pull(p.mandate, p.payTo, fromBase(BigInt(p.amount)), { paymentId: p.paymentId, recordRefusal: true });
+    return { tx: ev.tx, detail: this.chain.mode === "live" ? "settled on Metal testnet" : `settled on chain in block ${ev.block}` };
+  }
+}
+
 export interface Seller {
   url: string;
   name: string;
@@ -69,7 +85,7 @@ export interface Seller {
   close(): Promise<void>;
 }
 
-export async function startSeller(name: string, routes: Record<string, Route>, facilitator: Facilitator): Promise<Seller> {
+export async function startSeller(name: string, routes: Record<string, Route>, facilitator: Settles): Promise<Seller> {
   const seller: Seller = { url: "", name, calls: 0, server: undefined as any, close: async () => {} };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -83,15 +99,26 @@ export async function startSeller(name: string, routes: Record<string, Route>, f
     }
     let settlement;
     try {
-      settlement = facilitator.settle(unb64<Payment>(String(header)), offer, name);
+      settlement = await facilitator.settle(unb64<Payment>(String(header)), offer, name);
     } catch (err) {
+      // Only a refusal is a 402. Anything else (network, timeout) is not a refusal and must not be treated as one.
+      if (!(err instanceof MetalRefused) && !(err instanceof ClearingRefusal) && !/does not match the offer|stale running total/.test(String((err as Error).message))) {
+        res.writeHead(502, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error: "settlement failed", detail: (err as Error).message }));
+      }
       const reason = err instanceof MetalRefused ? err.reason : err instanceof ClearingRefusal ? err.reason : (err as Error).message;
       res.writeHead(402, { "content-type": "application/json", "payment-required": b64({ x402Version: 2, accepts: [offer] }) });
       return res.end(JSON.stringify({ x402Version: 2, error: "payment refused", reason, detail: (err as Error).message, tx: (err as MetalRefused).tx, retry: (err as ClearingRefusal).retry, accepts: [offer] }));
     }
     if (route.latencyMs) await new Promise((r) => setTimeout(r, route.latencyMs!()));
     seller.calls += 1;
-    const body = await route.handle(req, url);
+    let body: unknown;
+    try {
+      body = await route.handle(req, url);
+    } catch (err) {
+      res.writeHead(500, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ error: "handler failed", detail: (err as Error).message }));
+    }
     res.writeHead(200, { "content-type": "application/json", "payment-response": b64({ success: true, ...settlement }) });
     res.end(JSON.stringify(body));
   });
@@ -122,17 +149,17 @@ export interface Paid<T> {
  * Pay an x402 URL. `sign` turns the offer into a payment (and may refuse it,
  * e.g. an offer above the agent's own limit). Reads the 402 offer each time.
  */
-export async function payFetch<T = unknown>(url: string, sign: (offer: Offer) => Payment, guard?: (offer: Offer) => void): Promise<Paid<T>> {
+export async function payFetch<T = unknown>(url: string, sign: (offer: Offer) => Payment, guard?: (offer: Offer) => void, headers: Record<string, string> = {}): Promise<Paid<T>> {
   const t0 = Date.now();
-  const first = await fetch(url);
+  const first = await fetch(url, { headers });
   if (first.status !== 402) throw new Error(`expected a 402 offer from ${url}, got ${first.status}`);
   const offer = (unb64<{ accepts: Offer[] }>(first.headers.get("payment-required")!)).accepts[0]!;
   if (offer.asset !== "*USDZ" || offer.network !== METAL_TESTNET) throw new PaymentRefused("wrong_asset", `offer is not *USDZ on ${METAL_TESTNET}`);
   guard?.(offer);
-  const paid = await fetch(url, { headers: { "payment-signature": b64(sign(offer)) } });
+  const paid = await fetch(url, { headers: { ...headers, "payment-signature": b64(sign(offer)) } });
   const json = (await paid.json()) as any;
   if (paid.status === 402) throw new PaymentRefused(json.reason, json.detail, json.tx, json.retry);
-  if (!paid.ok) throw new Error(`${url} answered ${paid.status}`);
+  if (!paid.ok) throw new Error(`${url} answered ${paid.status}: ${json.detail ?? json.error ?? ""}`);
   return { body: json as T, offer, price: offer.scheme === "clearing" ? baseToMicros(BigInt(offer.amount)) : fromBase(BigInt(offer.amount)), settlement: unb64(paid.headers.get("payment-response")!), ms: Date.now() - t0 };
 }
 
