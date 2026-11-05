@@ -156,9 +156,11 @@ export interface DisputedCharge {
   /** Data version the query returned. */
   dataVersion: string;
   alreadyRefunded: boolean;
+  /** False when the query was answered with an error and its payment never settled (nothing to refund). */
+  charged?: boolean;
 }
 
-export type DisputeOutcome = "REFUND_WRONG_DATA" | "ALREADY_REFUNDED" | "UPHOLD_SIGNED" | "NO_SUCH_CHARGE";
+export type DisputeOutcome = "REFUND_WRONG_DATA" | "ALREADY_REFUNDED" | "NOT_CHARGED" | "UPHOLD_SIGNED" | "NO_SUCH_CHARGE";
 
 /**
  * A customer says its agent never placed a batch of orders and some data was wrong.
@@ -167,13 +169,13 @@ export type DisputeOutcome = "REFUND_WRONG_DATA" | "ALREADY_REFUNDED" | "UPHOLD_
  */
 export function resolveDisputedBatch(charges: DisputedCharge[], badVersions: string[], priceOf: (paymentId: string) => number) {
   const lines = charges.map((c) => {
-    const outcome: DisputeOutcome = !c.signedOnChain ? "NO_SUCH_CHARGE" : c.alreadyRefunded ? "ALREADY_REFUNDED" : badVersions.includes(c.dataVersion) ? "REFUND_WRONG_DATA" : "UPHOLD_SIGNED";
+    const outcome: DisputeOutcome = c.charged === false ? "NOT_CHARGED" : !c.signedOnChain ? "NO_SUCH_CHARGE" : c.alreadyRefunded ? "ALREADY_REFUNDED" : badVersions.includes(c.dataVersion) ? "REFUND_WRONG_DATA" : "UPHOLD_SIGNED";
     return { ...c, outcome, refundCents: outcome === "REFUND_WRONG_DATA" ? priceOf(c.paymentId) : 0 };
   });
   const count = (o: DisputeOutcome) => lines.filter((l) => l.outcome === o).length;
   return {
     lines,
     refundCents: lines.reduce((s, l) => s + l.refundCents, 0),
-    summary: { refund: count("REFUND_WRONG_DATA"), alreadyRefunded: count("ALREADY_REFUNDED"), upheld: count("UPHOLD_SIGNED"), noSuchCharge: count("NO_SUCH_CHARGE") },
+    summary: { refund: count("REFUND_WRONG_DATA"), alreadyRefunded: count("ALREADY_REFUNDED"), notCharged: count("NOT_CHARGED"), upheld: count("UPHOLD_SIGNED"), noSuchCharge: count("NO_SUCH_CHARGE") },
   };
 }

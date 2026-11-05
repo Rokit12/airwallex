@@ -15,14 +15,14 @@ import { randomUUID } from "node:crypto";
 import { createPublicClient, createWalletClient, custom, defineChain, encodeFunctionData, erc20Abi, http, parseAbiItem, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { METAL_NETWORKS, USDZ, accountFactoryFor } from "@metalntwx/metal-pay";
-import { FEE_PER_GAS, readMandateState, reasonName, refusalOf, sendMandateCall } from "@metalntwx/metal-pay/mandates";
+import { FEE_PER_GAS, readMandateState, reasonName, refusalOf, sendMandateCall, createMandatePaymentClient, parseCredential, p256DigestSigner, privateKeyHex, verifyMandatePayment } from "@metalntwx/metal-pay/mandates";
 // metal-agent's command implementations (the CLI calls these same functions).
 // @ts-expect-error untyped deep import
 import { credentialCreate, mandateBind, mandateReplace, mandatePull, accountCreate, loadMandate } from "@metalntwx/metal-agent/dist/commands/mandate.js";
 // @ts-expect-error untyped deep import
 import { fund } from "@metalntwx/metal-agent/dist/commands/fund.js";
 // @ts-expect-error untyped deep import
-import { issuerKeyPath, publicKeyPath, mandateKeyPath } from "@metalntwx/metal-agent/dist/keystore.js";
+import { issuerKeyPath, publicKeyPath, mandateKeyPath, readP256Key, readTrustedIssuer } from "@metalntwx/metal-agent/dist/keystore.js";
 import { MetalRefused, type Address, type ChainEvent, type Mandate, type MandateTerms, type Refusal } from "./emulator.ts";
 import type { MandateChain, MandateStatus } from "./mandates.ts";
 import { toBase } from "./units.ts";
@@ -47,7 +47,7 @@ function lines() {
 export class LiveMandates implements MandateChain {
   readonly mode = "live" as const;
   readonly network = `metal-testnet (eip155:${METAL.chainId}) · live`;
-  readonly concurrency = Number(process.env.METAL_CONCURRENCY ?? 10);
+  readonly concurrency = Number(process.env.METAL_CONCURRENCY ?? 6);
   private readonly target: any;
   private readonly client: any;
   private readonly factory: Address;
@@ -234,6 +234,36 @@ export class LiveMandates implements MandateChain {
       if (tx) this.ids.set(tx.toLowerCase(), paymentId);
       return { tx, block: 0, at: new Date().toISOString(), mandate: id, kind: "payment", from: m.principal, to, cents, paymentId };
     }
+  }
+
+  private readonly payers = new Map<string, Promise<{ fetchWithPayment: typeof fetch }>>();
+
+  /**
+   * The agent's x402 payer: createMandatePaymentClient on its own credential and mandate key.
+   * It signs the order a route asks for, and pays nothing outside the mandate (Metal refuses it).
+   */
+  payerFor(id: string) {
+    let p = this.payers.get(id);
+    if (!p) {
+      const m = this.mandate(id) as Local;
+      p = (async () => {
+        const credential = parseCredential(JSON.parse(readFileSync(m.credential, "utf8")));
+        const key = await readP256Key(m.keyFile);
+        return createMandatePaymentClient({ credential, signDigest: p256DigestSigner(privateKeyHex(key)), network: "testnet" }) as any;
+      })();
+      this.payers.set(id, p);
+    }
+    return p;
+  }
+
+  /** verifyMandatePayment: the signed order checked against the payment in `tx`, under the customer's credential and issuer. */
+  async verifyOrder(id: string, tx: string, signedOrder: string): Promise<{ ok: boolean; detail: string }> {
+    const m = this.mandate(id) as Local;
+    const credential = parseCredential(JSON.parse(readFileSync(m.credential, "utf8")));
+    const trustedIssuers = [await readTrustedIssuer(publicKeyPath(issuerKeyPath(m.ownerKey)))];
+    const v: any = await verifyMandatePayment(this.client, { accountFactory: this.factory, credential, trustedIssuers, tx: tx as Hex, checkoutMandate: signedOrder } as any);
+    const failed = (v.steps ?? []).filter((x: any) => x.outcome !== "pass" && x.outcome !== "passed" && x.outcome !== "ok");
+    return { ok: Boolean(v.ok), detail: v.ok ? "signed order matches the payment on chain" : failed.map((x: any) => `${x.title}: ${x.detail}`).join("; ") || "verification failed" };
   }
 
   /** Payments and refusals read from the account's MandatePayment / MandateRefused logs. */

@@ -64,3 +64,10 @@ test("a timed-out payout is read before anything is resent", () => {
   assert.equal(depositDecision(["0xABC"], "0xabc"), "SKIP_ALREADY_CREDITED");
   assert.equal(depositDecision([], "0xabc"), "CREDIT");
 });
+
+test("a query answered with an error was never charged: nothing to refund, and it is not counted as signed", () => {
+  const d = resolveDisputedBatch([{ paymentId: "x", signedOnChain: false, dataVersion: "none", alreadyRefunded: false, charged: false }], ["bad"], () => 5);
+  assert.equal(d.lines[0]!.outcome, "NOT_CHARGED");
+  assert.equal(d.refundCents, 0);
+  assert.equal(d.summary.notCharged, 1);
+});

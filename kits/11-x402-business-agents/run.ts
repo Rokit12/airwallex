@@ -9,12 +9,15 @@
  *  1. Fund the account; the agents' budgets fit the 20 *USDZ and the balance.
  *  2. Sell queries; each buys upstream data at 2c.
  *  3. The upstream price rises to 4c, above the 3c cap: the next purchase is
- *     refused (recorded on chain) and the customer refunded.
+ *     refused (nothing moves; the refusal is recorded on chain) and the customer's
+ *     query is answered with an error, so its payment is never settled.
  *  4. Treasury proposes new limits within the 20 *USDZ (and a higher query price
  *     when the margin gets too thin); a person approves; mandates are replaced.
  *  5. A customer disputes a batch: its agent "never placed" them and some data was
- *     wrong. The signed orders on chain show it did; queries from the batch the
- *     upstream withdrew are refunded from support's budget, none twice.
+ *     wrong. Each charge carries the agent's signed order (requireSignedOffer),
+ *     stored with its transaction hash and verified against the payment
+ *     (verifyMandatePayment); queries from the batch the upstream withdrew are
+ *     refunded from support's budget, none twice.
  *  6. Sweep earnings to Airwallex with the Metal transaction hash as reference
  *     (never credited twice), convert USD to EUR, pay the licence fee by SWIFT.
  */
@@ -27,7 +30,7 @@ import { auditPath, audit } from "../../src/core/audit.ts";
 import { openMandates } from "../../src/metal/rail.ts";
 import { inBatches } from "../../src/metal/mandates.ts";
 import { MetalRefused, type Address, type Mandate } from "../../src/metal/emulator.ts";
-import { startSeller, payFetch, exactPayment, PaymentRefused, type Seller } from "../../src/metal/x402.ts";
+import { startMarketSeller, marketPay, verifySignedOrder, type MarketSeller } from "../../src/metal/market.ts";
 import { fmt } from "../../src/metal/units.ts";
 import { checkAllocation, proposeReallocation, sweepAmount, afterTimeout, depositDecision, resolveDisputedBatch, DEFAULT_POLICY, type AgentId, type AgentLimits, type AgentState, type DisputedCharge } from "./policy.ts";
 import { API, UPSTREAM, BUYERS, OPENING_LIMITS, OPENING_BALANCE_CENTS, CALLS_BEFORE, CALLS_AFTER, REMAINING_CALLS_EXPECTED, BAD_BATCH_CALLS, DISPUTE, LICENCE } from "./fixtures.ts";
@@ -36,7 +39,7 @@ const awx = new AirwallexClient();
 const sb = new Sandbox(awx);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const short = (s: string) => `${s.slice(0, 10)}…${s.slice(-4)}`;
-const sellers: Seller[] = [];
+const sellers: MarketSeller[] = [];
 
 try {
   say.title("Kit 11 · x402 Business Agents — three agents share 20 *USDZ; limits move when costs do");
@@ -86,18 +89,23 @@ try {
   say.step(`${buyers.length} customer agents, each with its own Metal account and spending limit`);
 
   // ── x402 sellers ─────────────────────────────────────────────────────────
+  // Live: the official x402 middleware with Metal's scheme; the query route requires the customer agent's
+  // signed order (requireSignedOffer). A payment settles only after the handler succeeds.
   let upstreamPrice = UPSTREAM.priceCents;
   let apiPrice = API.priceCents;
   let call = 0; // queries started so far; each request carries its 1-based number in x-n
   const versionFor = (n: number) => (n >= BAD_BATCH_CALLS.from && n <= BAD_BATCH_CALLS.to ? UPSTREAM.badVersion : `feed-2026-10-28T${n < BAD_BATCH_CALLS.from ? "08" : "10"}`);
-  const upstream = await startSeller(UPSTREAM.name, {
-    [UPSTREAM.path]: { scheme: "exact", price: () => upstreamPrice, payTo: upstreamPayTo, description: "reference price feed", handle: (req) => ({ version: versionFor(Number(req.headers["x-n"])), quote: "EUR/USD 1.0842, Brent 81.20" }) },
-  }, facilitator);
+  const upstream = await startMarketSeller(chain, [
+    { path: UPSTREAM.path, priceCents: () => upstreamPrice, payTo: upstreamPayTo, description: "reference price feed", handle: async (req) => ({ status: 200, body: { version: versionFor(Number(req.headers["x-n"])), quote: "EUR/USD 1.0842, Brent 81.20" } }) },
+  ], () => {});
   sellers.push(upstream);
 
   const stats = { revenue: 0, upstream: 0, refunds: 0, served: 0, refused: 0 };
-  /** Every sale: who paid, for which query, at what price, and which data version it returned. */
-  const sales = new Map<string, { buyer: Address; n: number; priceCents: number; version: string }>();
+  /**
+   * Every query, keyed by its payment: who paid, the query number, price and data version; once its payment
+   * settles, the transaction hash, the customer agent's signed order and what was delivered (nothing else stores them).
+   */
+  const sales = new Map<string, { buyer: Address; n: number; priceCents: number; version: string; charged: boolean; tx?: string; signedOrder?: string; delivered?: unknown }>();
   const refunded = new Set<string>();
   const refund = async (to: Address, cents: number, why: string, paymentId: string) => {
     const ev = await chain.pull(mandates.SUPPORT.id, to, cents, { paymentId: `refund-${paymentId}` });
@@ -106,50 +114,64 @@ try {
     audit({ kind: "decision", subject: "refund", action: why, paymentId, cents });
     return ev;
   };
-  const api = await startSeller(API.name, {
-    [API.path]: {
-      scheme: "exact",
-      price: () => apiPrice,
-      payTo: owner,
-      description: "One market-data query",
-      handle: async (req) => {
-        const buyer = String(req.headers["x-buyer"] ?? "") as Address;
-        const paidId = String(req.headers["x-call"] ?? "");
-        const n = Number(req.headers["x-n"]);
-        const price = apiPrice;
-        stats.revenue += price;
-        try {
-          const up = await payFetch<{ version: string; quote: string }>(`${upstream.url}${UPSTREAM.path}`, exactPayment(mandates.SOURCING.id), undefined, { "x-n": String(n) });
-          stats.upstream += up.price;
-          stats.served += 1;
-          sales.set(paidId, { buyer, n, priceCents: price, version: up.body.version });
-          return { data: up.body.quote, version: up.body.version };
-        } catch (err) {
-          if (!(err instanceof PaymentRefused)) throw err;
-          stats.refused += 1;
-          sales.set(paidId, { buyer, n, priceCents: price, version: "none" });
-          const ev = await refund(buyer, price, "upstream refused", paidId);
-          say.warn(`sourcing refused by Metal: ${err.reason} — ${err.detail}${err.tx ? ` · refusal recorded in ${short(err.tx)}` : ""}`);
-          if (live && err.tx) say.step(`refusal on chain: ${chain.explorer(err.tx)}`);
-          say.step(`support refunded ${fmt(price)} to the customer · ${short(ev.tx)}`);
-          return { error: "upstream unavailable; refunded" };
-        }
-      },
+  const api = await startMarketSeller(chain, [{
+    path: API.path,
+    priceCents: () => apiPrice,
+    payTo: owner,
+    description: "One market-data query",
+    signedOrders: true,
+    handle: async (req, ctx) => {
+      const n = Number(req.headers["x-n"]);
+      const price = apiPrice;
+      const upPrice = upstreamPrice;
+      // A refusal within the cap is not the mandate's (for example a facilitator checking against a block that
+      // trails the clock): a new payment a moment later is a fresh authorization, and nothing was paid before it.
+      let up = await marketPay(chain, mandates.SOURCING.id, `${upstream.url}${UPSTREAM.path}`, { "x-n": String(n) });
+      for (let attempt = 1; up.status === 402 && attempt <= 4 && upPrice <= (await chain.status(mandates.SOURCING.id)).capCents; attempt++) {
+        await sleep(1500 * attempt);
+        up = await marketPay(chain, mandates.SOURCING.id, `${upstream.url}${UPSTREAM.path}`, { "x-n": String(n) });
+      }
+      if (up.status === 200) {
+        stats.upstream += upPrice;
+        sales.set(ctx.paymentKey, { buyer: ctx.payer, n, priceCents: price, version: up.body.version, charged: false });
+        return { status: 200, body: { data: up.body.quote, version: up.body.version } };
+      }
+      if (up.status !== 402) throw new Error(`upstream answered ${up.status}`);
+      // Refused over the sourcing cap: nothing moved. Answer the customer with an error, so its payment is never settled.
+      stats.refused += 1;
+      sales.set(ctx.paymentKey, { buyer: ctx.payer, n, priceCents: price, version: "none", charged: false });
+      say.warn(`sourcing refused by Metal: ${up.refusal?.reason ?? "refused"} (price ${fmt(upPrice)} over the ${fmt((await chain.status(mandates.SOURCING.id)).capCents)} cap)`);
+      // Record the refusal on chain (the owner key submits it; it moves nothing) for the audit trail,
+      // only when the mandate itself refuses this price: a pull within the cap would pay.
+      let recorded: string | undefined;
+      if (upPrice <= (await chain.status(mandates.SOURCING.id)).capCents) throw new Error(`upstream purchase for query ${n} refused within the cap: ${up.refusal?.reason ?? "unknown"}`);
+      try { await chain.pull(mandates.SOURCING.id, upstreamPayTo, upPrice, { paymentId: `refused-query-${n}`, recordRefusal: true }); }
+      catch (e) { if (!(e instanceof MetalRefused)) throw e; recorded = e.tx; say.step(`refusal recorded on chain: ${e.reason}${e.tx ? ` · ${live ? chain.explorer(e.tx) : short(e.tx)}` : ""}`); }
+      audit({ kind: "decision", subject: "refused query", action: "ANSWER_ERROR_NOT_CHARGED", n, recorded });
+      say.step(`query ${n} answered with an error: the customer's payment was not settled, so there is nothing to refund`);
+      return { status: 503, body: { error: "upstream refused the purchase; you were not charged" } };
     },
-  }, facilitator);
+  }], (sale) => {
+    const q = sales.get(sale.paymentKey);
+    if (q) Object.assign(q, { charged: true, tx: sale.tx, signedOrder: sale.signedOrder, delivered: sale.delivered });
+    stats.revenue += sale.cents;
+    stats.served += 1;
+  });
   sellers.push(api);
-  say.step(`x402 sellers up: ${API.name} at ${fmt(apiPrice)}/query (pays to the owner account) · upstream ${UPSTREAM.name} at ${fmt(upstreamPrice)}/request`);
+  say.step(`x402 sellers up: ${API.name} at ${fmt(apiPrice)}/query (pays to the owner account; signed order required) · upstream ${UPSTREAM.name} at ${fmt(upstreamPrice)}/request`);
 
   async function serveOne(n: number) {
     const b = buyers[(n - 1) % buyers.length]!;
-    const pay = exactPayment(b.mandate.id);
-    const res = await fetch(`${api.url}${API.path}`, { headers: { "x-n": String(n) } }); // buyer reads the 402 offer…
-    if (res.status !== 402) throw new Error("API should ask for payment first");
-    const offer = JSON.parse(Buffer.from(res.headers.get("payment-required")!, "base64").toString()).accepts[0];
-    const p = pay(offer); // …signs it under its own mandate, and repeats the request with the payment
-    const paid = await fetch(`${api.url}${API.path}`, { headers: { "payment-signature": Buffer.from(JSON.stringify(p)).toString("base64"), "x-buyer": b.acct, "x-call": p.scheme === "exact" ? p.paymentId : "", "x-n": String(n) } });
-    if (!paid.ok) throw new Error(`buyer call failed: ${paid.status} ${await paid.text()}`);
-    await paid.json();
+    // The customer's agent reads the 402 offer, signs the order and pays under its own mandate.
+    let r = await marketPay(chain, b.mandate.id, `${api.url}${API.path}`, { "x-n": String(n) });
+    // The facilitator answered success:false (rate_limited): the payment did not settle, so nothing was charged
+    // and a new payment is safe. Any other unconfirmed outcome is not retried.
+    for (let attempt = 1; r.status === 402 && r.refusal?.reason === "rate_limited" && attempt <= 5; attempt++) {
+      await sleep(2000 * attempt);
+      r = await marketPay(chain, b.mandate.id, `${api.url}${API.path}`, { "x-n": String(n) });
+    }
+    if (r.status === 200 || r.status === 503) return; // 503: upstream refused, customer not charged
+    throw new Error(`buyer call failed: ${r.status} ${JSON.stringify(r.body).slice(0, 300)}`);
   }
   /** Serve `count` queries; on Metal testnet many settle at once (each is its own pair of payments). */
   async function serve(count: number) {
@@ -225,13 +247,17 @@ try {
   const disputer = buyers[DISPUTE.buyerIndex]!;
   say.document(DISPUTE.message);
   say.document(UPSTREAM.correction);
-  const disputedIds = [...sales.entries()].filter(([, v]) => v.buyer === disputer.acct && v.n >= DISPUTE.fromCall && v.n <= DISPUTE.toCall).map(([id]) => id);
-  // The signed orders: each charge is a payment the customer's own key signed under its own mandate.
-  const signed = new Map((await chain.verify(disputer.mandate.id)).filter((e) => e.kind === "payment" && e.to?.toLowerCase() === owner.toLowerCase() && e.paymentId).map((e) => [e.paymentId!, e]));
-  const charges: DisputedCharge[] = disputedIds.map((id) => ({ paymentId: id, signedOnChain: signed.has(id), dataVersion: sales.get(id)!.version, alreadyRefunded: refunded.has(id) }));
+  // The customer's charges in the disputed range, plus the query the upstream refused (answered with an error);
+  // an attempt whose settlement the facilitator refused was never charged and is not part of the batch.
+  const disputed = [...sales.entries()].filter(([, v]) => v.buyer?.toLowerCase() === disputer.acct.toLowerCase() && v.n >= DISPUTE.fromCall && v.n <= DISPUTE.toCall && (v.charged || v.version === "none"));
+  // The signed orders: each charge carries the customer agent's signed order; check it against the payment on chain.
+  const checks = await inBatches(disputed, chain.concurrency, async ([id, v]) =>
+    v.charged && v.tx ? verifySignedOrder(chain, disputer.mandate.id, { path: API.path, paymentKey: id, payer: v.buyer, cents: v.priceCents, tx: v.tx, signedOrder: v.signedOrder ?? "", delivered: v.delivered }) : { ok: false, detail: "never charged" });
+  const charges: DisputedCharge[] = disputed.map(([id, v], i) => ({ paymentId: id, signedOnChain: checks[i]!.ok, dataVersion: v.version, alreadyRefunded: refunded.has(id), charged: v.charged }));
   const d = resolveDisputedBatch(charges, [UPSTREAM.badVersion], (id) => sales.get(id)!.priceCents);
-  say.table(d.lines.map((l) => ({ query: sales.get(l.paymentId)!.n, signed_order: l.signedOnChain ? `block ${signed.get(l.paymentId)!.block}` : "none", data: l.dataVersion, outcome: l.outcome, refund: fmt(l.refundCents) })));
-  say.decision("disputed batch", d.summary.noSuchCharge ? "PARTLY_UNPROVEN" : "SIGNED_BY_CUSTOMER", await explain({ ...d.summary, refundCents: d.refundCents }, `All ${charges.length} disputed charges are payments signed under ${disputer.name}'s own mandate, so its agent did place them. ${d.summary.refund} returned data from the withdrawn batch ${UPSTREAM.badVersion}: refund those. ${d.summary.alreadyRefunded} was already refunded when the upstream refused it, so it is not refunded again. The other ${d.summary.upheld} stand.`));
+  say.table(d.lines.map((l, i) => ({ query: sales.get(l.paymentId)!.n, signed_order: l.outcome === "NOT_CHARGED" ? "– (not charged)" : checks[i]!.ok ? `verified · ${short(sales.get(l.paymentId)!.tx!)}` : `✖ ${checks[i]!.detail.slice(0, 60)}`, data: l.dataVersion, outcome: l.outcome, refund: fmt(l.refundCents) })).sort((a, b) => a.query - b.query));
+  const chargedCount = charges.filter((c) => c.charged !== false).length;
+  say.decision("disputed batch", d.summary.noSuchCharge ? "PARTLY_UNPROVEN" : "SIGNED_BY_CUSTOMER", await explain({ ...d.summary, refundCents: d.refundCents }, `Each of the ${chargedCount} disputed charges carries ${disputer.name}'s signed order, verified against its payment on chain, so its agent did place them. ${d.summary.refund} returned data from the withdrawn batch ${UPSTREAM.badVersion}: refund those. ${d.summary.notCharged ? `${d.summary.notCharged} was never charged: the upstream refused it, so the customer's payment was not settled. ` : ""}The other ${d.summary.upheld} stand.`));
   await inBatches(d.lines.filter((x) => x.outcome === "REFUND_WRONG_DATA"), chain.concurrency, (l) => refund(disputer.acct, l.refundCents, "wrong data", l.paymentId));
   const supportLeft = await chain.status(mandates.SUPPORT.id);
   say.ok(`support refunded ${d.summary.refund} queries (${fmt(d.refundCents)}) from its own budget, each under its ${fmt(supportLeft.capCents)} cap · support has ${fmt(supportLeft.remainingCents)} left · no charge refunded twice`);
@@ -280,7 +306,13 @@ try {
   const conv = await awx.post("/fx/conversions/create", { request_id: newRequestId(), quote_id: quote.quote_id, buy_currency: "EUR", sell_currency: "USD", buy_amount: eurNeeded });
   say.ok(`FX ${conv.status}: bought EUR ${conv.buy_amount} (invoice ${LICENCE.amount} + SWIFT fee ${swiftFee}) for USD ${conv.sell_amount} @ ${conv.client_rate ?? quote.client_rate}`);
   const ben = await awx.post("/beneficiaries/create", { request_id: newRequestId(), ...LICENCE.beneficiary });
-  const tr = await awx.post("/transfers/create", { request_id: newRequestId(), beneficiary_id: ben.id ?? ben.beneficiary_id, transfer_amount: String(LICENCE.amount), transfer_currency: "EUR", source_currency: "EUR", transfer_method: "SWIFT", reference: LICENCE.invoice, reason: "professional_business_services" });
+  // A transient fee_unknown is retried with the same request_id, so the payout can never be created twice.
+  const licenceRequestId = newRequestId();
+  let tr: any;
+  for (let attempt = 1; ; attempt++) {
+    try { tr = await awx.post("/transfers/create", { request_id: licenceRequestId, beneficiary_id: ben.id ?? ben.beneficiary_id, transfer_amount: String(LICENCE.amount), transfer_currency: "EUR", source_currency: "EUR", transfer_method: "SWIFT", reference: LICENCE.invoice, reason: "professional_business_services" }); break; }
+    catch (e) { if (attempt >= 4 || !/fee_unknown/.test(String((e as Error).message))) throw e; say.step(`Airwallex answered fee_unknown; retrying the same payout (same request id) in ${5 * attempt} s`); await sleep(5000 * attempt); }
+  }
   await sb.advanceTransfer(tr.id, "SENT");
   const status = await sb.advanceTransfer(tr.id, "PAID");
   say.ok(`licence ${LICENCE.invoice}: EUR ${LICENCE.amount} to ${LICENCE.licensor} by SWIFT (fee ${tr.fee_amount ?? swiftFee}) → ${status}`);
