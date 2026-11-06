@@ -222,7 +222,8 @@ try {
       // Money leaves clearing after two finalities (balance final → queue → queued withdrawal final → claim),
       // each after a 5-minute challenge window, so this takes about ten minutes.
       if (!finalityWaitStarted) { finalityWaitStarted = Date.now(); say.step("job B waits for job C's unspent deposit: Metal releases it after two 5-minute challenge windows (the balance must be final to queue it, then the queued withdrawal must be final to claim it)"); }
-      if (Date.now() - finalityWaitStarted > 15 * 60_000) { say.fail("job C's withdrawal did not come back within 15 minutes: stopping"); break; }
+      // Two 5-minute challenge windows plus epoch closes: usually 10 to 15 minutes, longer when testnet is slow.
+      if (Date.now() - finalityWaitStarted > 30 * 60_000) { say.fail(`job C's withdrawal did not come back within 30 minutes (${clearing.withdrawalStage(C.key)}): stopping`); break; }
       await new Promise((r) => setTimeout(r, 15_000));
       const got = await clearing.claim(C.key);
       const secs = Math.round((Date.now() - finalityWaitStarted) / 1000);
