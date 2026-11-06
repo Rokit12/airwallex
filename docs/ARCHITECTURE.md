@@ -25,7 +25,7 @@ flowchart TB
     AP["approval.ts<br/>terms-bound approvals"]
     LK["lock.ts<br/>duplicate-payment lock"]
     SB["sandbox.ts<br/>simulation calls"]
-    LLM["llm.ts<br/>Claude reads and explains"]
+    LLM["llm.ts<br/>the model reads and explains"]
     AU["audit.ts<br/>JSONL log, redacted"]
     NA["narrate.ts<br/>text or console events"]
   end
@@ -54,7 +54,7 @@ flowchart TB
 sequenceDiagram
   participant Run as run.ts
   participant AWX as Airwallex
-  participant LLM as Claude (optional)
+  participant LLM as Model (optional)
   participant Pol as policy.ts
   participant Person
   Run->>AWX: read balances, transfers, disputes…
@@ -85,7 +85,7 @@ sequenceDiagram
 | `approval.ts` | An approval is a SHA-256 hash of the exact terms shown. `assertApproved` throws if anything changed since. Works in the terminal, in the console, or unattended with `APPROVE=yes`. It also throws if the approver is the proposing agent: only a person approves. |
 | `untrusted.ts` | Flags instructions hidden in text the agent reads (emails, case notes, forwarded statements). Flagging is for the run and the audit log; nothing in the text can change an amount, account, action or approval. |
 | `lock.ts` | One lock per obligation (invoice, payroll line). Written before the API call with the `request_id`, so a crash can be recovered by asking Airwallex about that `request_id` instead of paying again. |
-| `llm.ts` | Optional Claude calls: extract structured facts from text (validated against a type guard) and explain decisions in plain language. Without `ANTHROPIC_API_KEY`, deterministic rules give the same decisions. |
+| `llm.ts` | Optional model calls: extract structured facts from text (validated against a type guard) and explain decisions in plain language. Without `ANTHROPIC_API_KEY`, deterministic rules give the same decisions. |
 | `audit.ts` | Appends every API call, decision and approval to `runs/kitNN-<time>.jsonl`, with card numbers, CVCs and tokens redacted. |
 | `narrate.ts` | Prints the story in the terminal, or emits structured events when run under the console. |
 | `business.ts` | The one business profile every kit acts for: Trailhead Outfitters LLC, United States of America, USD. |
@@ -138,7 +138,7 @@ The kits are the same code on AWS. `scripts/build-agentcore.mjs` bundles each ki
 
 - **The runtime:** answers `/ping` and `/invocations` (`kits`, `run`, `events`, `approve`). It starts kits through the same runner as the local console.
 - **The console API:** `src/aws/api.ts`, behind API Gateway and a Cognito JWT authorizer, sets the approver from the verified token before invoking the runtime.
-- **Model calls:** `src/core/llm.ts` calls Claude on Bedrock when `BEDROCK_MODEL_ID` is set. Otherwise it calls the Anthropic API, or falls back to rules.
+- **Model calls:** `src/core/llm.ts` calls the model on Bedrock when `BEDROCK_MODEL_ID` is set. Otherwise it calls the Anthropic API, or falls back to rules.
 - **Browser:** `src/core/browser.ts` launches a packaged arm64 Chromium when `CHROMIUM_PACK` is set.
 
 See [AWS.md](AWS.md).

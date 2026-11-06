@@ -36,8 +36,8 @@ const major = (minor: number) => Math.round(minor) / 100;
 const totalOf = (s: any) => Number((s.totals ?? []).find((t: any) => t.type === "total")?.amount ?? NaN);
 
 /**
- * The shopper's checkout UI (Airwallex's native checkout widget in Claude
- * Desktop) tokenizes the card. Card numbers live only here, never in the
+ * The shopper's checkout UI (Airwallex's native checkout widget in the
+ * shopper's AI assistant) tokenizes the card. Card numbers live only here, never in the
  * agent's context, prompts or logs; the agent receives the token.
  */
 async function shopperTokenizes(acp: AcpShopper, sessionId: string, maxAmountMinor: number, card: "declined" | "good", idempotencyKey: string): Promise<{ token: string; last4: string }> {

@@ -2,7 +2,8 @@
  * Kit 10 — Merchant-Enabled Agentic Checkout (merchant side)
  *
  * The merchant exposes its catalogue (120 synthetic products) and checkout to
- * Claude through an MCP server. The shopper asks Claude for a product; Claude
+ * an AI assistant through an MCP server. The shopper asks the assistant for a
+ * product; the assistant
  * searches with the merchant's tools, confirms merchant, product, quantity,
  * delivery and total, creates a checkout with an idempotency key, and sends
  * the shopper to a hosted payment page. Card details go only to that page.
@@ -11,8 +12,8 @@
  *    same checkout instead of creating a new one.
  *  - Success: the merchant returns an order number and the payment outcome.
  *
- * Connect Claude to the same tools: `npm run store`, then
- *   claude mcp add-json trailhead-store '{"type":"http","url":"http://localhost:4320/mcp"}'
+ * Connect an AI assistant to the same tools: `npm run store`, then add
+ *   http://localhost:4320/mcp as an HTTP MCP server
  *
  * Airwallex has enabled Agentic Commerce on the account. Onboarding the merchant
  * (Airwallex's own merchant MCP endpoint and catalogue ingest) also needs a
@@ -76,11 +77,11 @@ async function shopperPays(paymentUrl: string, card: { number: string; label: st
 }
 
 try {
-  say.title("Kit 10 · Merchant-Enabled Agentic Checkout — buying through Claude with the merchant's MCP tools");
-  say.beat("goal", "Let a shopper buy through Claude: confirmed terms, card only on the hosted page, one order even if a payment fails.");
+  say.title("Kit 10 · Merchant-Enabled Agentic Checkout — buying through an AI assistant with the merchant's MCP tools");
+  say.beat("goal", "Let a shopper buy through an AI assistant: confirmed terms, card only on the hosted page, one order even if a payment fails.");
 
-  say.beat("connect", "Claude connects to the merchant's MCP server.");
-  const init = await mcp("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "claude", version: "agent" } });
+  say.beat("connect", "The assistant connects to the merchant's MCP server.");
+  const init = await mcp("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "shopper-assistant", version: "agent" } });
   const { tools } = await mcp("tools/list");
   say.step(`MCP server ${init.serverInfo.name} · tools: ${tools.map((t: any) => t.name).join(", ")}`);
   say.step(`catalogue: ${store.catalog.length} synthetic products across ${new Set(store.catalog.map((p) => p.category)).size} categories`);
@@ -102,7 +103,7 @@ try {
   const choice = refined.filter((p: any) => /set/i.test(p.name)).sort((a: any, b: any) => b.rating - a.rating)[0];
   const product = await tool("get_product", { sku: choice.sku });
   const total = Math.round((product.price + shipping) * 100) / 100;
-  say.decision("Claude's pick", `${product.name} · ${usd(total)}`, `Highest-rated set under ${usd(ask.max_total)} with ${ask.delivery.toLowerCase()} delivery and returns; current price ${usd(product.price)} read just now with get_product.`);
+  say.decision("The assistant's pick", `${product.name} · ${usd(total)}`, `Highest-rated set under ${usd(ask.max_total)} with ${ask.delivery.toLowerCase()} delivery and returns; current price ${usd(product.price)} read just now with get_product.`);
 
   say.beat("confirm", "Confirm merchant, product, quantity, delivery and total before any payment.");
   const terms: Terms = { action: "CHECKOUT", amount: total, currency: "USD", counterparty: MERCHANT.name, product: `${product.sku} ${product.name}`, quantity: 1, delivery: ask.delivery };

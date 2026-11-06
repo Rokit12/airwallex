@@ -145,12 +145,14 @@ Pick a kit and press **Run agent**. When the agent needs a person, the run stops
 
 The guide recommends these for your coding agent while building. The project itself calls the REST API, so it doesn't need them to run. Add the docs server first, since it needs no account:
 
-```sh
-claude mcp add-json airwallex-docs '{ "type": "http", "url": "https://mcp.sandbox.airwallex.com/docs" }'
-claude mcp add-json airwallex-dev '{ "type": "http", "url": "https://mcp.sandbox.airwallex.com/developer" }'
+```json
+{ "mcpServers": {
+  "airwallex-docs": { "type": "http", "url": "https://mcp.sandbox.airwallex.com/docs" },
+  "airwallex-dev":  { "type": "http", "url": "https://mcp.sandbox.airwallex.com/developer" }
+} }
 ```
 
-Other clients (Cursor, Codex, Gemini CLI, Windsurf) use the same two URLs. Don't use the AgentOS MCP here; it is for production accounts.
+Any MCP client (Cursor, Codex, Gemini CLI, Windsurf and others) takes the same two URLs. Don't use the AgentOS MCP here; it is for production accounts.
 
 ### If setup fails
 
@@ -197,14 +199,13 @@ npm run build:replay         # writes preview/agent-console.html from those runs
 
 ```sh
 npm run store                # storefront on :4320, MCP endpoint at /mcp
-claude mcp add-json trailhead-store '{"type":"http","url":"http://localhost:4320/mcp"}'
-```
+Add `http://localhost:4320/mcp` to your AI assistant as an HTTP MCP server.
 
 Then ask, for example: "Find me a set of insulated water bottles under $85 with returns."
 
 ## Hosted on AWS
 
-The same fifteen kits are hosted on **Amazon Bedrock AgentCore Runtime** at [https://d1zoxhgak5pvwd.cloudfront.net/](https://d1zoxhgak5pvwd.cloudfront.net/) (judge sign-in under [Try it live](#try-it-live)), with Claude on **Amazon Bedrock** as the model. The deployment follows the pattern of Airwallex's AWS reference builds for kits 1 to 8.
+The same fifteen kits are hosted on **Amazon Bedrock AgentCore Runtime** at [https://d1zoxhgak5pvwd.cloudfront.net/](https://d1zoxhgak5pvwd.cloudfront.net/) (judge sign-in under [Try it live](#try-it-live)) The agents are built to call the model on **Amazon Bedrock** with the runtime's own role; while Bedrock model access is being enabled on the account, the hosted runs use the built-in rules, which reach the same decisions. The deployment follows the pattern of Airwallex's AWS reference builds for kits 1 to 8.
 
 - **The console:** the page is served from a private S3 bucket through Amazon CloudFront (HTTPS, security headers). Operators sign in with Amazon Cognito, which has no self sign-up. API Gateway checks each request's sign-in token, then a Lambda forwards it to the runtime, which has no public endpoint.
 - **Approvals:** recorded under the signed-in person, taken from the verified token. An approval can never come from the agent.
@@ -355,7 +356,7 @@ Behind a proxy on Node 22+, run with `NODE_USE_ENV_PROXY=1`.
 ## Tests
 
 ```sh
-npm test                     # 106 tests: policy for all fifteen kits, approvals, the beneficiary schema check, x402 settlement and the AWS console API
+npm test                     # 111 tests: policy for all fifteen kits, approvals, the beneficiary schema check, x402 settlement and the AWS console API
 npm run typecheck
 npm run verify               # both, as CI runs them
 ```

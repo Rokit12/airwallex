@@ -64,7 +64,7 @@ test("OAuth: discovery, redirect policy and PKCE", () => {
   assert.equal(d.issuer, "https://m.example/oauth");
   assert.ok(d.code_challenge_methods_supported.includes("S256"));
   assert.equal(allowedRedirect("http://localhost:3334/oauth/callback"), true);
-  assert.equal(allowedRedirect("https://claude.ai/api/mcp/auth_callback"), true);
+  assert.equal(allowedRedirect("https://assistant.example/api/mcp/auth_callback"), true);
   assert.equal(allowedRedirect("http://evil.example/cb"), false);
   assert.equal(allowedRedirect("javascript:alert(1)"), false);
   const verifier = "a".repeat(43);

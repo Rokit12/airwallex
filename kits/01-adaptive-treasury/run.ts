@@ -110,7 +110,7 @@ async function pay(o: Obligation, sourceCurrency: Ccy) {
 // ── Main ─────────────────────────────────────────────────────────────────────
 say.title("Kit 1 · Adaptive Treasury Controller — 72-hour obligations");
 say.beat("goal", `Pay what keeps the business running without dropping below the ${usd(P.reserveFloor)} reserve.`);
-say.step(`model: ${llmEnabled() ? "Claude reads the customer's email" : "rules only (set ANTHROPIC_API_KEY to let Claude read the email)"}`);
+say.step(`model: ${llmEnabled() ? "the model reads the customer's email" : "rules only (set ANTHROPIC_API_KEY to let the model read the email)"}`);
 
 const wallet = { USD: await sb.ensureUsd(ENVELOPE.USD), EUR: await sb.available("EUR"), GBP: await sb.available("GBP") };
 const cash: Record<Ccy, number> = { USD: Math.min(wallet.USD, ENVELOPE.USD), EUR: Math.min(wallet.EUR, ENVELOPE.EUR), GBP: Math.min(wallet.GBP, ENVELOPE.GBP) };

@@ -41,17 +41,17 @@ npm run aws:merchant -- products    # 120 products in GMC attributes, POST /pa/a
 
 Then, in the Airwallex web app, go to **Developer → Webhooks** and add a `payment_intent.succeeded` webhook to `<MerchantUrl>/webhooks/airwallex`. Store its secret with `WEBHOOK_SECRET=… npm run aws:merchant -- webhook`.
 
-## Shop from Claude Desktop
+## Shop from a desktop AI assistant
 
-Add Airwallex's merchant MCP endpoint (printed by `onboard`, saved in `infra/merchant.json`) to `claude_desktop_config.json`:
+Add Airwallex's merchant MCP endpoint (printed by `onboard`, saved in `infra/merchant.json`) to your assistant's MCP settings (for desktop assistants that take a config file, through `mcp-remote`):
 
 ```json
 { "mcpServers": { "trailhead-outfitters": { "command": "npx", "args": ["-y", "mcp-remote", "https://mcp.sandbox.airwallex.com/pa/ai/<merchantId>/acp/mcp"] } } }
 ```
 
-Restart Claude Desktop, sign in as a guest on the Trailhead Outfitters page that opens, and ask for "a set of two insulated water bottles under $85 with returns". Pay with the test card `4035501000000008`, or use `4646464646464644` to see a declined card.
+Restart the assistant, sign in as a guest on the Trailhead Outfitters page that opens, and ask for "a set of two insulated water bottles under $85 with returns". Pay with the test card `4035501000000008`, or use `4646464646464644` to see a declined card.
 
-The local storefront still works too: `npm run store`, then `claude mcp add-json trailhead-store '{"type":"http","url":"http://localhost:4320/mcp"}'`.
+The local storefront still works too: `npm run store`, then add `http://localhost:4320/mcp` to your assistant as an HTTP MCP server.
 
 ## Run it
 

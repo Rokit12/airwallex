@@ -207,7 +207,7 @@ function escalateToPerson(c: DemoCase, f: DisputeFacts, dec: Decision) {
 say.title(`Kit 4 · Dispute Response Agent — ${BUSINESS.tradingName} chargeback queue`);
 say.beat("goal", "Clear three disputes before their deadlines while losing as little money as possible.");
 say.step(`policy: chargeback fee ${usd(DEFAULT_POLICY.chargebackFee)}, response cost ${usd(DEFAULT_POLICY.responseCost)}, auto-accept ≤ ${usd(DEFAULT_POLICY.autoAcceptLimit)}, auto-challenge ≤ ${usd(DEFAULT_POLICY.autoChallengeLimit)}`);
-say.step(`model: ${llmEnabled() ? "Claude reads notes and explains decisions" : "rules only (set ANTHROPIC_API_KEY to let Claude read the notes)"}`);
+say.step(`model: ${llmEnabled() ? "the model reads notes and explains decisions" : "rules only (set ANTHROPIC_API_KEY to let the model read the notes)"}`);
 
 say.beat("setup", "Taking three card payments and staging a dispute on each (sandbox simulation).");
 const staged: { c: DemoCase; disputeId: string; piId: string }[] = [];

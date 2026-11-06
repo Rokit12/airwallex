@@ -1,12 +1,12 @@
 /**
- * AWS deployment of the Agent Desk (all twelve kits), following the pattern of
+ * AWS deployment of the Agent Desk (all fifteen kits), following the pattern of
  * Airwallex's AWS reference builds (github.com/awx-devx/airwallex-agentic-banking-aws):
  *
  *   browser ──► CloudFront + S3 (console page)
  *          └─► API Gateway HTTP API ── Cognito JWT authorizer (operators sign in)
  *                 └─► Lambda (console API) ── InvokeAgentRuntime (IAM) ──►
  *                        Amazon Bedrock AgentCore Runtime (NODE_22): the kits
- *                           ├─ Claude on Amazon Bedrock (read and explain only)
+ *                           ├─ the model on Amazon Bedrock (read and explain only)
  *                           ├─ Airwallex sandbox / Metal testnet (keys in Secrets Manager)
  *                           └─ approvals: the signed-in operator, never the agent
  *

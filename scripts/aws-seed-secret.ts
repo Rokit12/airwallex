@@ -8,7 +8,7 @@
  *
  * Values go straight from your machine to Secrets Manager over TLS. Nothing is
  * printed, logged or written to the repository. The Anthropic key is not sent:
- * on AWS the model is Claude on Bedrock, called with the runtime's IAM role.
+ * on AWS the model is on Bedrock, called with the runtime's IAM role.
  */
 import "../src/core/env.ts";
 import { existsSync, readFileSync } from "node:fs";

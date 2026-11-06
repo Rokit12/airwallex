@@ -78,7 +78,7 @@ async function authorize(cardId: string, a: { amount: number; currency: string; 
 // ── Main ─────────────────────────────────────────────────────────────────────
 say.title("Kit 2 · Intent-Bound Purchase Agent — Northwind Analytics Team plan");
 say.beat("goal", "Buy the analytics plan without letting cash fall below the reserve floor.");
-say.step(`model: ${llmEnabled() ? "Claude reads the quote and explains" : "rules only (set ANTHROPIC_API_KEY to let Claude read the quote)"}`);
+say.step(`model: ${llmEnabled() ? "the model reads the quote and explains" : "rules only (set ANTHROPIC_API_KEY to let the model read the quote)"}`);
 
 const wallet = await sb.ensureUsd(25_000);
 // The team's operating budget is a slice of the company wallet, capped by what is really there.

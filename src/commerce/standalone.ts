@@ -1,10 +1,10 @@
 /**
- * Run the test storefront on its own so Claude can use its MCP tools:
+ * Run the test storefront on its own so an AI assistant can use its MCP tools:
  *
  *   npm run store
- *   claude mcp add-json trailhead-store '{"type":"http","url":"http://localhost:4320/mcp"}'
+ *   then add http://localhost:4320/mcp to it as an HTTP MCP server
  *
- * Then ask Claude, e.g. "find me a set of insulated water bottles under $85 with returns".
+ * Then ask the assistant, e.g. "find me a set of insulated water bottles under $85 with returns".
  */
 import "../core/env.ts";
 import { RailsClient } from "../core/rails.ts";

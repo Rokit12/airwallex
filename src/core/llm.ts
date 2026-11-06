@@ -3,7 +3,7 @@
  * a decision. It never sees credentials or card data and never chooses amounts:
  * limits, reserves and state transitions stay in code.
  *
- * With ANTHROPIC_API_KEY set this calls Claude; without it each call uses the
+ * With ANTHROPIC_API_KEY set this calls the model; without it each call uses the
  * deterministic fallback, so every kit runs offline and gives the same decision.
  */
 import { audit } from "./audit.ts";
@@ -11,8 +11,8 @@ import { audit } from "./audit.ts";
 const MODEL = process.env.AGENT_MODEL ?? "claude-sonnet-5-5";
 
 /**
- * On AWS the model is Claude on Amazon Bedrock (BEDROCK_MODEL_ID, an inference
- * profile such as us.anthropic.claude-sonnet-5), called with the runtime's IAM
+ * On AWS the model runs on Amazon Bedrock (BEDROCK_MODEL_ID, an inference
+ * profile ID; the defaults are in infra/app.ts), called with the runtime's IAM
  * role, so no model key is stored anywhere. Locally it is the Anthropic API.
  */
 const bedrockModel = () => process.env.BEDROCK_MODEL_ID;

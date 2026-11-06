@@ -1,6 +1,6 @@
 # Running the Agent Desk on AWS
 
-The twelve kits run on **Amazon Bedrock AgentCore Runtime**, with Claude on **Amazon Bedrock** as the model. The hosted console is protected by **Amazon Cognito** sign-in. It follows the pattern of Airwallex's AWS reference builds for kits 1 to 8 ([awx-devx/airwallex-agentic-banking-aws](https://github.com/awx-devx/airwallex-agentic-banking-aws)), applied to our TypeScript build of all twelve kits.
+The fifteen kits run on **Amazon Bedrock AgentCore Runtime**, built to call the model on **Amazon Bedrock** with the runtime's own role. The hosted console is protected by **Amazon Cognito** sign-in. It follows the pattern of Airwallex's AWS reference builds for kits 1 to 8 ([awx-devx/airwallex-agentic-banking-aws](https://github.com/awx-devx/airwallex-agentic-banking-aws)), applied to our TypeScript build of all fifteen kits.
 
 Everything still runs against the Airwallex sandbox and the Metal testnet only.
 
@@ -16,7 +16,7 @@ browser ──► CloudFront ─► S3                    console page + config.
           │  InvokeAgentRuntime (IAM; the runtime has no public endpoint)
           ▼
         AgentCore Runtime (Node.js 22, arm64)   the kits, unchanged
-          ├─ Claude on Bedrock                  reads and explains; never sets amounts
+          ├─ model on Bedrock                   reads and explains; never sets amounts
           ├─ Secrets Manager                    Airwallex sandbox + Metal testnet keys
           ├─ Airwallex sandbox API, Metal testnet
           └─ headless Chromium                  kit 9 shops the test store
@@ -38,7 +38,7 @@ Airwallex ──► API Gateway (public) ──► Lambda (kit 10 merchant) ─�
 ## What you need
 
 - An AWS account, and credentials with administrator access in the deploy Region. Short-lived credentials (IAM Identity Center) are best.
-- Bedrock model access to Claude Sonnet in that Region. The defaults are `us.anthropic.claude-sonnet-5`, falling back to `us.anthropic.claude-sonnet-4-5-20250929-v1:0`. Set `-c modelId=` and `-c fallbackModelId=` to use others.
+- Bedrock model access in that Region. Set `-c modelId=` and `-c fallbackModelId=` to the inference profiles you want; the defaults are in `infra/app.ts`. Without model access the kits run on the built-in rules.
 - A Region where AgentCore Runtime is available. The default is `us-west-2`.
 - Node.js 22, and this repository set up as in the README (the sandbox keys in `.env`).
 
@@ -66,13 +66,13 @@ npm run aws:operator -- you@example.com                  # invites you; Cognito 
 
 ## Kit 10's merchant on Airwallex Agentic Commerce
 
-After the deploy, run `npm run aws:merchant -- keys`, `-- onboard` and `-- products`. Then add the `payment_intent.succeeded` webhook in the Airwallex web app, and store its secret with `WEBHOOK_SECRET=… npm run aws:merchant -- webhook`. [Kit 10's README](../kits/10-merchant-agentic-checkout/README.md) has the details and the Claude Desktop setup.
+After the deploy, run `npm run aws:merchant -- keys`, `-- onboard` and `-- products`. Then add the `payment_intent.succeeded` webhook in the Airwallex web app, and store its secret with `WEBHOOK_SECRET=… npm run aws:merchant -- webhook`. [Kit 10's README](../kits/10-merchant-agentic-checkout/README.md) has the details and the desktop assistant setup.
 
 ## What is different from a local run
 
 | | Local (`npm run console`) | AWS |
 |---|---|---|
-| Model | Anthropic API (`ANTHROPIC_API_KEY`) | Claude on Bedrock (IAM role) |
+| Model | Anthropic API (`ANTHROPIC_API_KEY`) | the model on Bedrock (IAM role) |
 | Approver | `operator`, or `APPROVER=` | the signed-in Cognito user |
 | Browser for kits 9 and 10 | Playwright's Chromium | serverless Chromium for arm64 (`@sparticuz/chromium-min`), shipped in the package |
 | Console updates | server-sent events | polling every second through API Gateway |

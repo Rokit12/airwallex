@@ -111,7 +111,7 @@ const isEmailFacts = (v: any): v is EmailFacts =>
 // ── Main ─────────────────────────────────────────────────────────────────────
 say.title(`Kit 3 · Payment Ops Incident Commander — ${INVOICE.id}, ${SUPPLIER.name}`);
 say.beat("goal", `Get ${SUPPLIER.name} paid ${usd(INVOICE.amount)} for ${INVOICE.id} exactly once.`);
-say.step(`model: ${llmEnabled() ? "Claude reads the supplier's email" : "rules only (set ANTHROPIC_API_KEY to let Claude read the email)"}`);
+say.step(`model: ${llmEnabled() ? "the model reads the supplier's email" : "rules only (set ANTHROPIC_API_KEY to let the model read the email)"}`);
 resetLock(REF);
 const startBalance = await sb.ensureUsd(INVOICE.amount * 3);
 

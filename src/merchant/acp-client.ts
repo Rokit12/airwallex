@@ -1,6 +1,6 @@
 /**
  * The shopper's side of Airwallex Agentic Commerce, as a desktop assistant
- * (Claude Desktop via mcp-remote) does it:
+ * (through mcp-remote) does it:
  *   1. read the MCP endpoint's protected-resource metadata → the merchant's OAuth server
  *   2. register a client, sign in (guest), exchange the code with PKCE
  *   3. call Airwallex's ACP tools over MCP (streamable HTTP) with the bearer token

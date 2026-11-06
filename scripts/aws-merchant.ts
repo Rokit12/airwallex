@@ -43,7 +43,7 @@ const saveMcp = (r: any) => {
   const acp = String(r.mcp_endpoints.acp);
   const url = acp.startsWith("http") ? acp : `https://mcp.sandbox.airwallex.com${acp.startsWith("/") ? "" : "/"}${acp}`;
   writeFileSync("infra/merchant.json", JSON.stringify({ merchant_id: r.merchant_id, acp_mcp_url: url }, null, 2));
-  console.log(`ACP MCP endpoint for Claude Desktop: ${url}`);
+  console.log(`ACP MCP endpoint for a desktop AI assistant: ${url}`);
 };
 
 switch (cmd) {
