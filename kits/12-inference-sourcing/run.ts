@@ -205,6 +205,7 @@ try {
   const reportedWait = new Set<string>();
   let idleEpochs = 0;
   let finalityWaitStarted = 0;
+  let announcedFinalAt = 0;
   for (let round = 0; round < 600; round++) {
     let progressed = false;
     for (const j of jobs.filter((x) => !x.failed && x.stepIndex < x.steps.length)) {
@@ -224,11 +225,19 @@ try {
       if (!finalityWaitStarted) { finalityWaitStarted = Date.now(); say.step("job B waits for job C's unspent deposit: Metal releases it after two 5-minute challenge windows (the balance must be final to queue it, then the queued withdrawal must be final to claim it)"); }
       // Two 5-minute challenge windows plus epoch closes: usually 10 to 15 minutes, longer when testnet is slow.
       if (Date.now() - finalityWaitStarted > 30 * 60_000) { say.fail(`job C's withdrawal did not come back within 30 minutes (${clearing.withdrawalStage(C.key)}): stopping`); break; }
-      await new Promise((r) => setTimeout(r, 15_000));
+      // Metal's advice: when the withdrawal answers `waiting`, read that epoch's challenge deadline
+      // (contextOf(epoch).challengeDeadline) and wait until it, instead of polling blind.
+      const finalAt = clearing.finalAt(C.key);
+      if (finalAt && finalAt !== announcedFinalAt) {
+        announcedFinalAt = finalAt;
+        say.step(`${clearing.withdrawalStage(C.key)}: that epoch's challenge window ends at ${new Date(finalAt).toISOString().slice(11, 19)} UTC (in ${Math.max(0, Math.ceil((finalAt - Date.now()) / 60_000))} min, read from the contract)`);
+      }
+      const waitMs = finalAt && finalAt > Date.now() ? Math.min(finalAt - Date.now() + 5_000, 60_000) : 15_000;
+      await new Promise((r) => setTimeout(r, Math.max(waitMs, 5_000)));
       const got = await clearing.claim(C.key);
       const secs = Math.round((Date.now() - finalityWaitStarted) / 1000);
       if (got) say.ok(`job C's withdrawal is final and claimed after ${secs} s: float +${fmt(got)}`);
-      else { if (secs % 60 < 15) say.step(`still waiting (${secs} s): ${clearing.withdrawalStage(C.key)}`); continue; }
+      else { if (!clearing.finalAt(C.key) && secs % 60 < 15) say.step(`still waiting (${secs} s): ${clearing.withdrawalStage(C.key)}`); continue; }
     } else if (++idleEpochs > 3) {
       say.fail("no job can progress and the float cannot fund them: stopping");
       break;

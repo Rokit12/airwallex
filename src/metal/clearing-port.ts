@@ -66,13 +66,16 @@ export interface ClearingPort {
   awaitingFinality(key: string): boolean;
   /** Where a pending withdrawal is (live): waiting for the balance to be final, or for the queued withdrawal to be. */
   withdrawalStage(key: string): string;
+  /** When the epoch the pending withdrawal waits on stops being challengeable (ms since epoch), read from the
+   * contract's contextOf(epoch).challengeDeadline, as Metal advised; undefined when unknown or emulated. */
+  finalAt(key: string): number | undefined;
   /** What each provider earned this run, in micros, and how it is paid out. */
   providerEarnings(): { earnings: Record<string, number>; note: string };
   explorer(tx: string): string;
   close(): Promise<void>;
 }
 
-interface Ledger { deposits: { micros: number; at: number }[]; spent: number; withdrawn: number; queued: { micros: number; at: number; claimed: boolean }[]; stage?: string }
+interface Ledger { deposits: { micros: number; at: number }[]; spent: number; withdrawn: number; queued: { micros: number; at: number; claimed: boolean }[]; stage?: string; finalAt?: number }
 const newLedger = (): Ledger => ({ deposits: [], spent: 0, withdrawn: 0, queued: [] });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -114,6 +117,7 @@ export function emulatedClearing(floatCents: number): ClearingPort {
     async claim(key) { return clearing.claim(key, operator); },
     awaitingFinality: () => false,
     withdrawalStage: () => "",
+    finalAt: () => undefined,
     providerEarnings() {
       const paid = clearing.settleProviders(payTo);
       return { earnings: Object.fromEntries(Object.entries(paid).map(([k, v]) => [k, v * 10_000])), note: "paid by the operator at settlement" };
@@ -178,6 +182,14 @@ export async function liveClearing(floatCents: number, extra: { settlement: Hex;
 
   const chain = defineChain({ id: chainId, name: "metal-testnet", nativeCurrency: { name: "USDZ", symbol: "USDZ", decimals: 18 }, rpcUrls: { default: { http: [rpcUrl] } } });
   const reader = createPublicClient({ chain, transport: http(rpcUrl) });
+  /** The challenge deadline of `ep`: once past it, that epoch can be finalized (0 or a revert: not admitted yet). */
+  const deadlineOf = async (ep: bigint): Promise<number | undefined> => {
+    try {
+      const ctx = (await reader.readContract({ address: settlement, abi: clearingAbi as any, functionName: "contextOf", args: [ep] })) as { challengeDeadline: bigint };
+      return ctx.challengeDeadline > 0n ? Number(ctx.challengeDeadline) * 1000 : undefined;
+    } catch { return undefined; }
+  };
+  const noteWait = async (l: Ledger, w: { status: string; epoch?: bigint }) => { l.finalAt = w.status === "waiting" && w.epoch !== undefined ? await deadlineOf(w.epoch) : undefined; };
   const admitted = async () => (await reader.readContract({ address: settlement, abi: clearingAbi as any, functionName: "admittedCount" })) as bigint;
 
   let float = floatCents;
@@ -269,6 +281,7 @@ export async function liveClearing(floatCents: number, extra: { settlement: Hex;
       const w = await withdrawRetrying({ rpcUrl, chainId, from: operator, settlement, signer: jobs[key]!.wallet.signer, serviceUrl, destination: operator.address });
       if (unspent > 0) { l.queued.push({ micros: unspent, at: Date.now(), claimed: false }); l.withdrawn += unspent; }
       l.stage = w.status === "sent" && w.queued ? "queued; waiting for that epoch to be final" : "waiting for the balance to be final before it can be queued";
+      await noteWait(l, w as { status: string; epoch?: bigint });
       audit({ kind: "metal_clearing_withdraw", key, status: w.status, micros: unspent });
       return { queuedMicros: unspent, epoch };
     },
@@ -277,6 +290,7 @@ export async function liveClearing(floatCents: number, extra: { settlement: Hex;
       if (!l.queued.some((q) => !q.claimed)) return 0;
       const w = await withdrawRetrying({ rpcUrl, chainId, from: operator, settlement, signer: jobs[key]!.wallet.signer, serviceUrl, destination: operator.address });
       if (w.status === "sent" && w.queued && !w.claimed.length) { l.stage = "queued; waiting for that epoch to be final"; audit({ kind: "metal_clearing_queued", key, tx: w.queued.tx }); }
+      await noteWait(l, w as { status: string; epoch?: bigint });
       if (w.status !== "sent" || !w.claimed.length) return 0;
       const micros = w.claimed.reduce((s, c) => s + Number(c.amount / UNIT), 0);
       for (const q of l.queued) q.claimed = true;
@@ -287,6 +301,7 @@ export async function liveClearing(floatCents: number, extra: { settlement: Hex;
     },
     awaitingFinality: (key) => Boolean(ledgers[key]?.queued.some((q) => !q.claimed)),
     withdrawalStage: (key) => ledgers[key]?.stage ?? "",
+    finalAt: (key) => ledgers[key]?.finalAt,
     providerEarnings: () => ({
       earnings: Object.fromEntries(Object.entries(sellers).map(([id, s]) => [routesById[id]!.name, s.earned])),
       note: "held in each provider's clearing account; withdrawable once their epochs are final",
