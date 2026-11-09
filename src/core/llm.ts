@@ -13,7 +13,8 @@ const MODEL = process.env.AGENT_MODEL ?? "claude-sonnet-5-5";
 /**
  * On AWS the model runs on Amazon Bedrock (BEDROCK_MODEL_ID, an inference
  * profile ID; the defaults are in infra/app.ts), called with the runtime's IAM
- * role, so no model key is stored anywhere. Locally it is the Anthropic API.
+ * role, so no model key is stored anywhere. Locally, or on AWS while Bedrock access is
+ * unavailable, it is the model provider's API, with the key from .env or Secrets Manager.
  */
 const bedrockModel = () => process.env.BEDROCK_MODEL_ID;
 export const llmEnabled = () => Boolean(bedrockModel() || process.env.ANTHROPIC_API_KEY);
@@ -36,8 +37,21 @@ async function completeBedrock(system: string, user: string, maxTokens: number):
   throw last;
 }
 
+/** Set once Bedrock refuses for the account, so later calls go straight to the API key. */
+let bedrockRefused = false;
+
 async function complete(system: string, user: string, maxTokens = 600): Promise<string> {
-  if (bedrockModel()) return completeBedrock(system, user, maxTokens);
+  if (bedrockModel() && !bedrockRefused) {
+    try {
+      return await completeBedrock(system, user, maxTokens);
+    } catch (err) {
+      // No API key: let the caller use its rules. With one (kept in Secrets Manager on AWS),
+      // use it while Bedrock access is unavailable; Bedrock is tried again on the next run.
+      if (!process.env.ANTHROPIC_API_KEY) throw err;
+      bedrockRefused = true;
+      audit({ kind: "llm_route", from: "bedrock", to: "api", reason: String((err as Error)?.message ?? err).slice(0, 160) });
+    }
+  }
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {

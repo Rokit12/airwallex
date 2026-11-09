@@ -7,14 +7,14 @@
  *   npm run aws:seed -- --dry-run    (lists what would be sent; no values)
  *
  * Values go straight from your machine to Secrets Manager over TLS. Nothing is
- * printed, logged or written to the repository. The Anthropic key is not sent:
- * on AWS the model is on Bedrock, called with the runtime's IAM role.
+ * printed, logged or written to the repository. The model API key, if set, is sent
+ * too: the runtime uses it only while Bedrock (called with its IAM role) is unavailable.
  */
 import "../src/core/env.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const KEYS = ["AWX_CLIENT_ID", "AWX_API_KEY", "METAL_RPC_URL"];
+const KEYS = ["AWX_CLIENT_ID", "AWX_API_KEY", "METAL_RPC_URL", "ANTHROPIC_API_KEY", "AGENT_MODEL"];
 const dry = process.argv.includes("--dry-run");
 
 const outputs = existsSync("infra/outputs.json") ? JSON.parse(readFileSync("infra/outputs.json", "utf8")) : {};

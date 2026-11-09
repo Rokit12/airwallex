@@ -205,7 +205,7 @@ Then ask, for example: "Find me a set of insulated water bottles under $85 with 
 
 ## Hosted on AWS
 
-The same fifteen kits are hosted on **Amazon Bedrock AgentCore Runtime** at [https://d1zoxhgak5pvwd.cloudfront.net/](https://d1zoxhgak5pvwd.cloudfront.net/) (judge sign-in under [Try it live](#try-it-live)) The agents are built to call the model on **Amazon Bedrock** with the runtime's own role; while Bedrock model access is being enabled on the account, the hosted runs use the built-in rules, which reach the same decisions. The deployment follows the pattern of Airwallex's AWS reference builds for kits 1 to 8.
+The same fifteen kits are hosted on **Amazon Bedrock AgentCore Runtime** at [https://d1zoxhgak5pvwd.cloudfront.net/](https://d1zoxhgak5pvwd.cloudfront.net/) (judge sign-in under [Try it live](#try-it-live)). The agents call the model on **Amazon Bedrock** with the runtime's own role. While Bedrock model access is being enabled on the account, the runtime calls the model provider's API instead, with the key held in **AWS Secrets Manager** and read by the runtime's role; Bedrock takes over again once access returns. The deployment follows the pattern of Airwallex's AWS reference builds for kits 1 to 8.
 
 - **The console:** the page is served from a private S3 bucket through Amazon CloudFront (HTTPS, security headers). Operators sign in with Amazon Cognito, which has no self sign-up. API Gateway checks each request's sign-in token, then a Lambda forwards it to the runtime, which has no public endpoint.
 - **Approvals:** recorded under the signed-in person, taken from the verified token. An approval can never come from the agent.

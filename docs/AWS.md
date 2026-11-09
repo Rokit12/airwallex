@@ -38,7 +38,7 @@ Airwallex ──► API Gateway (public) ──► Lambda (kit 10 merchant) ─�
 ## What you need
 
 - An AWS account, and credentials with administrator access in the deploy Region. Short-lived credentials (IAM Identity Center) are best.
-- Bedrock model access in that Region. Set `-c modelId=` and `-c fallbackModelId=` to the inference profiles you want; the defaults are in `infra/app.ts`. Without model access the kits run on the built-in rules.
+- Bedrock model access in that Region. Set `-c modelId=` and `-c fallbackModelId=` to the inference profiles you want; the defaults are in `infra/app.ts`. Without Bedrock access the runtime uses the model API key from the secret, if one was seeded (`npm run aws:seed`), and otherwise the built-in rules.
 - A Region where AgentCore Runtime is available. The default is `us-west-2`.
 - Node.js 22, and this repository set up as in the README (the sandbox keys in `.env`).
 
