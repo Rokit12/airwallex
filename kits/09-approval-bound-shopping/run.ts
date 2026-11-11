@@ -45,13 +45,13 @@ try {
   say.beat("goal", "Buy exactly what the shopper approves, ask again if anything changes, and never pay twice.");
   say.step(`merchant: ${MERCHANT.name} at ${url} (local test storefront) · payment credentials: ${provider.name}`);
   say.document(SHOPPER_REQUEST);
-  const { value: intent } = await extract(
+  const { value: intent, source: intentSource } = await extract(
     "Extract JSON: need (string), budget (number, total including delivery), arriveWithinDays (number), returnsRequired (boolean).",
     SHOPPER_REQUEST,
     (v: any): v is Intent => v && typeof v.need === "string" && typeof v.budget === "number" && typeof v.arriveWithinDays === "number" && typeof v.returnsRequired === "boolean",
     () => ({ need: "3-person tent", budget: 200, arriveWithinDays: 8, returnsRequired: true }),
   );
-  say.step(`intent: ${intent.need}, ≤ ${usd(intent.budget)} all-in, arrive ≤ ${intent.arriveWithinDays} business days, returns ${intent.returnsRequired ? "required" : "optional"}`);
+  say.step(`request read by ${intentSource} · intent: ${intent.need}, ≤ ${usd(intent.budget)} all-in, arrive ≤ ${intent.arriveWithinDays} business days, returns ${intent.returnsRequired ? "required" : "optional"}`);
 
   say.beat("shop", "Search the merchant site and read every matching product page.");
   await page.goto(url);

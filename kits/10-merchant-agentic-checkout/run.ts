@@ -87,13 +87,14 @@ try {
   say.step(`catalogue: ${store.catalog.length} synthetic products across ${new Set(store.catalog.map((p) => p.category)).size} categories`);
 
   say.document(SHOPPER);
-  const { value: ask } = await extract(
+  const { value: ask, source: askSource } = await extract(
     "Extract JSON: query (short product search string), max_total (number), returns_required (boolean), delivery (STANDARD or EXPRESS).",
     SHOPPER,
     (v: any): v is { query: string; max_total: number; returns_required: boolean; delivery: string } => v && typeof v.query === "string" && typeof v.max_total === "number",
     () => ({ query: "insulated water bottle set", max_total: 85, returns_required: true, delivery: "STANDARD" }),
   );
 
+  say.step(`request read by ${askSource}: "${ask.query}", ≤ ${ask.max_total} USD all-in, returns ${ask.returns_required ? "required" : "optional"}, ${ask.delivery.toLowerCase()} delivery`);
   say.beat("search", "Search the catalogue with the merchant's tool, then refine.");
   const broad = await tool("search_products", { query: ask.query });
   say.step(`"${ask.query}": ${broad.length} matches`);

@@ -90,12 +90,16 @@ priorOrdersSameDevice (number of earlier undisputed orders from the same device)
 ipMatchesPriorOrders (boolean), deliveryScanned (boolean), deliverySigned (boolean),
 unansweredSupportContacts (number of customer contacts with no reply), refundAlreadyIssued (boolean).`,
     text,
-    isEvidence,
+    // A field the text does not state comes back null; it is filled from the ledger below.
+    (v: unknown): v is Evidence => isEvidence(Object.fromEntries(Object.keys(c.facts).map((k) => [k, (v as any)?.[k] ?? (c.facts as any)[k]]))) && Object.keys(v as object).every((k) => k in c.facts),
     () => c.facts,
   );
-  const diff = Object.keys(c.facts).filter((k) => (value as any)[k] !== (c.facts as any)[k]);
-  say.step(`evidence read by ${source}${diff.length ? ` (differs from ledger on: ${diff.join(", ")} — using ledger)` : ""}`);
-  return diff.length ? c.facts : value; // ledger facts win over a model misread
+  const stated = Object.keys(c.facts).filter((k) => (value as any)[k] !== null && (value as any)[k] !== undefined);
+  const notStated = Object.keys(c.facts).length - stated.length;
+  const diff = stated.filter((k) => (value as any)[k] !== (c.facts as any)[k]);
+  const merged = { ...c.facts, ...Object.fromEntries(stated.map((k) => [k, (value as any)[k]])) } as Evidence;
+  say.step(`evidence read by ${source}${source === "model" && notStated ? ` (${notStated} field(s) the text does not state, taken from the ledger)` : ""}${diff.length ? ` (differs from ledger on: ${diff.join(", ")} — using ledger)` : ""}`);
+  return diff.length ? c.facts : merged; // ledger facts win over a model misread
 }
 
 async function uploadDocs(docs: DemoCase["documents"]) {

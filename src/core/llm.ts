@@ -76,6 +76,7 @@ export async function extract<T>(task: string, text: string, validate: (v: unkno
     const out = await complete(
       "You extract facts from finance documents. Reply with one JSON object only, no prose. Use null for anything the text does not state. Never invent numbers.",
       `${task}\n\n<document>\n${text}\n</document>`,
+      4000, // room for the model's reasoning as well as the JSON
     );
     const json = JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1));
     if (validate(json)) {
@@ -96,7 +97,7 @@ export async function explain(facts: Record<string, unknown>, fallback: string):
     const out = await complete(
       "You explain a finance agent's decision to an operator in at most two sentences. The decision is final and was made by policy code; do not change it or add numbers that are not in the facts.",
       JSON.stringify(facts),
-      200,
+      1500,
     );
     return out.trim() || fallback;
   } catch {

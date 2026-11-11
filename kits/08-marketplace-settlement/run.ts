@@ -50,9 +50,14 @@ const platformBefore = awx.mode === "emulated" ? 0 : await balanceOf(awx, undefi
 if (awx.mode === "emulated") await awx.fundPlatform(totalOwed, "Buyer payments, week 42");
 else {
   await sb.deposit(await sb.usdGlobalAccount(), totalOwed, "Buyer payments, week 42");
-  for (let i = 0; i < 10 && (await balanceOf(awx, undefined)) < platformBefore + totalOwed - 0.005; i++) await new Promise((r) => setTimeout(r, 1000));
+  // Sandbox deposits usually credit within seconds, sometimes a minute; wait for this cycle's money before paying anyone.
+  for (let i = 0; i < 45 && (await balanceOf(awx, undefined)) < platformBefore + totalOwed - 0.005; i++) await new Promise((r) => setTimeout(r, 2000));
 }
 const platformStart = r2((await balanceOf(awx, undefined)) - platformBefore);
+if (platformStart < totalOwed - 0.005) {
+  say.fail(`the buyer-payment deposit has not credited after 90 s (${usd(platformStart)} of ${usd(totalOwed)}): stopping before paying any seller`);
+  process.exit(1);
+}
 say.step(`platform received ${usd(platformStart)} of buyer payments = ${usd(totalOwed)} owed to sellers, no spare cash`);
 
 say.beat("plan", "Set a reserve per seller.");
@@ -73,12 +78,13 @@ for (const key of ["GRANITE", "FERN"] as const) {
 
 say.beat("new information", "A carrier notice arrives before Pebble Toys' payout runs.");
 say.document(CARRIER_NOTICE);
-const { value: notice } = await extract(
+const { value: notice, source: noticeSource } = await extract(
   "Extract JSON: merchant (string), parcels (number).",
   CARRIER_NOTICE,
   (v: any): v is { merchant: string; parcels: number } => v && typeof v.merchant === "string" && typeof v.parcels === "number",
   () => ({ merchant: "PEBBLE TOYS CO", parcels: UNDELIVERED.orders }),
 );
+say.step(`notice read by ${noticeSource}: ${notice.parcels} undelivered parcels for ${notice.merchant}`);
 const pebble = SELLERS.find((x) => x.key === "PEBBLE")!;
 const raised = reserveWithEvidence(pebble, { orders: notice.parcels, avgValue: UNDELIVERED.avgValue });
 say.decision(pebble.spec.name, `RESERVE ${usd(reserves.PEBBLE!)} → ${usd(raised.reserve)}`, await explain({ seller: pebble.spec.name, ...raised }, raised.reason));

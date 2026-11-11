@@ -82,13 +82,14 @@ for (const s of SPEND) {
 
 say.beat("receipts", "Dana submits receipts; the model reads them into fields, code checks them.");
 say.document(RECEIPT_TEXT);
-const { value: read } = await extract(
-  "Extract JSON: receipts (array of {merchant, total (number), category one of AIRFARE|LODGING|MEAL|PARKING|BAGGAGE, nights (number, lodging only), attendees (number, meals only), cabin (airfare only), paidWith COMPANY_CARD|PERSONAL, lines (array of {description, amount}) for itemised folios}).",
+const { value: read, source: receiptSource } = await extract(
+  "Extract JSON: receipts (array of {merchant, total (number), category one of AIRFARE|LODGING|MEAL|PARKING|BAGGAGE, nights (number, lodging only), attendees (number, meals only), cabin (airfare only) one of ECONOMY|PREMIUM_ECONOMY|BUSINESS|FIRST, paidWith: COMPANY_CARD when paid with the company Visa ending 6543, otherwise PERSONAL (cash or any other card), lines (array of {description, amount}) for itemised folios}).",
   RECEIPT_TEXT,
-  (v: any): v is { receipts: Receipt[] } => v && Array.isArray(v.receipts) && v.receipts.length === 5 && v.receipts.every((r: any) => typeof r.total === "number"),
+  (v: any): v is { receipts: Receipt[] } => v && Array.isArray(v.receipts) && v.receipts.length === 5 && v.receipts.every((r: any) => typeof r.total === "number" && ["COMPANY_CARD", "PERSONAL"].includes(r.paidWith) && ["AIRFARE", "LODGING", "MEAL", "PARKING", "BAGGAGE"].includes(r.category)),
   () => ({ receipts: [...RECEIPTS, ...OUT_OF_POCKET] }),
 );
 const all = read.receipts.map((r, i) => ({ ...r, id: `R${i + 1}` }));
+say.step(`receipts read by ${receiptSource}: ${all.length} receipts, ${all.filter((r) => r.paidWith === "PERSONAL").length} paid personally`);
 const onCard = all.filter((r) => r.paidWith === "COMPANY_CARD");
 const outOfPocket = all.filter((r) => r.paidWith === "PERSONAL");
 
